@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = localStorage.getItem('supabase_url') || 'https://illzgrubrstyagmkqfju.supabase.co'
-const supabaseAnonKey = localStorage.getItem('supabase_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbHpncnVicnN0eWFnbWtxZmp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyNzA5ODksImV4cCI6MjA4Mzg0Njk4OX0.cUnAo_vB6wz6zwSUXrrkpj8w3Mp7EgKeBM3ZiDbHceQ'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || 'https://illzgrubrstyagmkqfju.supabase.co'
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbHpncnVicnN0eWFnbWtxZmp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyNzA5ODksImV4cCI6MjA4Mzg0Njk4OX0.cUnAo_vB6wz6zwSUXrrkpj8w3Mp7EgKeBM3ZiDbHceQ'
 
 export const supabase = (supabaseUrl && supabaseAnonKey)
     ? createClient(supabaseUrl, supabaseAnonKey)
