@@ -1,0 +1,83 @@
+{
+  "defaultCategories": {
+    "income": [
+      {
+        "id": "inc_salary",
+        "name": "Salario",
+        "icon": "💰",
+        "color": "#2ecc71"
+      },
+      {
+        "id": "inc_freelance",
+        "name": "Freelance",
+        "icon": "💻",
+        "color": "#27ae60"
+      },
+      {
+        "id": "inc_invest",
+        "name": "Inversiones",
+        "icon": "📈",
+        "color": "#16a085"
+      },
+      {
+        "id": "inc_gift",
+        "name": "Regalos",
+        "icon": "🎁",
+        "color": "#1abc9c"
+      },
+      {
+        "id": "inc_other",
+        "name": "Otros",
+        "icon": "➕",
+        "color": "#34495e"
+      }
+    ],
+    "expense": [
+      {
+        "id": "exp_food",
+        "name": "Alimentación",
+        "icon": "🍔",
+        "color": "#e74c3c"
+      },
+      {
+        "id": "exp_transport",
+        "name": "Transporte",
+        "icon": "🚌",
+        "color": "#e67e22"
+      },
+      {
+        "id": "exp_entertainment",
+        "name": "Entretenimiento",
+        "icon": "🎬",
+        "color": "#9b59b6"
+      },
+      {
+        "id": "exp_services",
+        "name": "Servicios",
+        "icon": "💡",
+        "color": "#f1c40f"
+      },
+      {
+        "id": "exp_shopping",
+        "name": "Compras",
+        "icon": "🛍️",
+        "color": "#d35400"
+      },
+      {
+        "id": "exp_other",
+        "name": "Otros",
+        "icon": "💸",
+        "color": "#7f8c8d"
+      }
+    ]
+  },
+  "appSettings": {
+    "currency": "USD",
+    "language": "es",
+    "theme": "light",
+    "supabase": {
+      "url": "https://illzgrubrstyagmkqfju.supabase.co",
+      "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbHpncnVicnN0eWFnbWtxZmp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyNzA5ODksImV4cCI6MjA4Mzg0Njk4OX0.cUnAo_vB6wz6zwSUXrrkpj8w3Mp7EgKeBM3ZiDbHceQ"
+    }
+  }
+}

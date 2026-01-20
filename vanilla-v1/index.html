@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gestión de Presupuesto Multi-Cuenta</title>
+    <!-- Configuración para App Móvil -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2c3e50">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2845/2845874.png">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Main CSS -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Auth CSS -->
+    <link rel="stylesheet" href="auth-styles.css">
+    <!-- SheetJS (Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Navigation -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-wallet"></i>
+                <h2>FinanzasPro</h2>
+            </div>
+            <nav>
+                <button class="nav-btn active" data-view="dashboard">
+                    <i class="fa-solid fa-chart-pie"></i> Dashboard
+                </button>
+                <button class="nav-btn" data-view="accounts">
+                    <i class="fa-solid fa-credit-card"></i> Cuentas
+                </button>
+                <button class="nav-btn" data-view="transactions">
+                    <i class="fa-solid fa-list"></i> Transacciones
+                </button>
+                <button class="nav-btn" data-view="budget">
+                    <i class="fa-solid fa-bullseye"></i> Presupuesto
+                </button>
+                <button class="nav-btn" data-view="settings">
+                    <i class="fa-solid fa-gear"></i> Configuración
+                </button>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="theme-toggle" class="icon-btn" title="Cambiar Tema">
+                    <i class="fa-solid fa-moon"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header>
+                <h1 id="page-title">Dashboard</h1>
+                <div class="toolbar">
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="btn-add-transaction">
+                            <i class="fa-solid fa-plus"></i> Transacción
+                        </button>
+                        <button class="btn btn-secondary" id="btn-add-account">
+                            <i class="fa-solid fa-bank"></i> Nueva Cuenta
+                        </button>
+                    </div>
+                    <!-- El botón de usuario se agregará aquí dinámicamente -->
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view-section active">
+                <div class="summary-cards">
+                    <div class="card summary-card total-balance">
+                        <h3>Saldo Total</h3>
+                        <p class="amount" id="total-balance-display">$0.00</p>
+                    </div>
+                    <div class="card summary-card total-income">
+                        <h3>Ingresos del Mes</h3>
+                        <p class="amount positive" id="monthly-income-display">$0.00</p>
+                    </div>
+                    <div class="card summary-card total-expense">
+                        <h3>Gastos del Mes</h3>
+                        <p class="amount negative" id="monthly-expense-display">$0.00</p>
+                    </div>
+                    <div class="card summary-card budget-remaining">
+                        <h3>Presupuesto Restante</h3>
+                        <p class="amount" id="budget-remaining-display" style="color: var(--primary-color);">$0.00</p>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="card" id="accounts-preview">
+                        <h3>Resumen de Cuentas</h3>
+                        <div id="accounts-list-preview" class="list-container">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="card" id="budget-preview">
+                        <h3>Estado del Presupuesto</h3>
+                        <div id="budget-bars-container">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Accounts View -->
+            <section id="view-accounts" class="view-section">
+                <div id="accounts-grid" class="grid-container">
+                    <!-- Account Cards injected here -->
+                </div>
+            </section>
+
+            <!-- Transactions View -->
+            <section id="view-transactions" class="view-section">
+                <div class="filters-bar card">
+                    <div class="filter-group">
+                        <label>Cuenta:</label>
+                        <select id="filter-account">
+                            <option value="all">Todas</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Mes:</label>
+                        <input type="month" id="filter-month">
+                    </div>
+                    <div class="filter-group">
+                        <label>Búsqueda:</label>
+                        <input type="text" id="filter-search" placeholder="Buscar...">
+                    </div>
+                </div>
+                <div class="table-container card">
+                    <table id="transactions-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Cuenta</th>
+                                <th>Categoría</th>
+                                <th>Nota</th>
+                                <th>Monto</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Rows injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Budget View -->
+            <section id="view-budget" class="view-section">
+                <div class="budget-header card" style="margin-bottom: 2rem;">
+                    <div
+                        style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <h3 id="budget-month-title">Presupuesto Mensual</h3>
+                            <p style="opacity:0.7; font-size: 0.9rem;">Seguimiento de ingresos y gastos por categoría.
+                            </p>
+                        </div>
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <div class="switch-toggle" style="margin-bottom: 0;">
+                                <input type="radio" id="view-monthly" name="budget-view" value="monthly" checked>
+                                <label for="view-monthly">Mensual</label>
+                                <input type="radio" id="view-annual" name="budget-view" value="annual">
+                                <label for="view-annual">Anual</label>
+                            </div>
+                            <div class="filter-group" style="margin-bottom: 0;" id="month-selector-container">
+                                <input type="month" id="budget-filter-month">
+                            </div>
+                            <div class="filter-group" style="margin-bottom: 0; display: none;"
+                                id="year-selector-container">
+                                <input type="number" id="budget-filter-year" min="2020" max="2100" placeholder="Año">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Monthly View -->
+                <div id="budget-monthly-view">
+                    <!-- General Monthly Budget Card -->
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.5rem;">
+                            <div style="flex: 1; min-width: 250px;">
+                                <h4 style="margin-bottom: 8px;">Presupuesto General del Mes</h4>
+                                <div id="general-budget-status-text"
+                                    style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 12px;">
+                                    Define un presupuesto mensual para controlar tus gastos totales.
+                                </div>
+                                <div class="progress-container" style="height: 14px; margin-bottom: 8px;">
+                                    <div id="general-budget-progress-bar" class="progress-bar" style="width: 0%"></div>
+                                </div>
+                                <div
+                                    style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
+                                    <span id="general-budget-spent">$0.00 gastados</span>
+                                    <span id="general-budget-total">Meta: $0.00</span>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <label style="font-size: 0.85rem; font-weight: 600;">Ajustar Límite</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="number" id="input-general-budget" placeholder="0.00"
+                                        style="width: 130px;">
+                                    <button id="btn-save-general-budget" class="btn btn-primary"
+                                        style="padding: 8px 16px;">Guardar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Income Budget Section -->
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h4 style="margin: 0;">💰 Presupuesto de Ingresos</h4>
+                            <button id="btn-toggle-income-budget" class="btn btn-secondary"
+                                style="padding: 6px 12px; font-size: 0.85rem;">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div id="income-budget-container" style="display: none;">
+                            <p style="font-size: 0.9rem; opacity: 0.7; margin-bottom: 1rem;">
+                                Define tus ingresos esperados por categoría para este mes.
+                            </p>
+                            <div id="income-budget-grid" class="grid-container"
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                                <!-- Income budget items will be injected here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Expense Budget Section -->
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <h4 style="margin: 0;">💸 Presupuesto de Gastos</h4>
+                            <button id="btn-toggle-expense-budget" class="btn btn-secondary"
+                                style="padding: 6px 12px; font-size: 0.85rem;">
+                                <i class="fa-solid fa-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div id="expense-budget-container">
+                            <p style="font-size: 0.9rem; opacity: 0.7; margin-bottom: 1rem;">
+                                Define tus límites de gasto por categoría para este mes.
+                            </p>
+                            <div id="expense-budget-grid" class="grid-container"
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                                <!-- Expense budget items will be injected here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Annual View -->
+                <div id="budget-annual-view" style="display: none;">
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <h4 style="margin-bottom: 1rem;">📊 Resumen Anual</h4>
+                        <div id="annual-summary-cards"
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                            <!-- Annual summary cards -->
+                        </div>
+                    </div>
+
+                    <!-- Annual Income Chart -->
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <h4 style="margin-bottom: 1rem;">💰 Ingresos Anuales por Categoría</h4>
+                        <div id="annual-income-chart">
+                            <!-- Annual income breakdown -->
+                        </div>
+                    </div>
+
+                    <!-- Annual Expense Chart -->
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <h4 style="margin-bottom: 1rem;">💸 Gastos Anuales por Categoría</h4>
+                        <div id="annual-expense-chart">
+                            <!-- Annual expense breakdown -->
+                        </div>
+                    </div>
+
+                    <!-- Monthly Comparison Table -->
+                    <div class="card">
+                        <h4 style="margin-bottom: 1rem;">📅 Comparación Mensual</h4>
+                        <div style="overflow-x: auto;">
+                            <table id="annual-comparison-table" style="width: 100%; border-collapse: collapse;">
+                                <!-- Monthly comparison data -->
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="budget-categories-grid" class="grid-container"
+                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                    <!-- Budget bars for categories will be injected here -->
+                </div>
+            </section>
+
+            <!-- Settings View -->
+            <section id="view-settings" class="view-section">
+                <div class="card settings-card">
+                    <h3>Importación y Exportación</h3>
+                    <p style="font-size: 0.9rem; margin-bottom: 1rem; color: #666;">Gestiona tus datos importando desde
+                        Excel o exportando a CSV.</p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="btn-export-csv" class="btn btn-secondary">
+                            <i class="fa-solid fa-file-csv"></i> Exportar (CSV)
+                        </button>
+                        <label for="file-import-xlsx" class="btn btn-secondary" style="cursor: pointer;">
+                            <i class="fa-solid fa-file-excel"></i> Importar Excel
+                        </label>
+                        <input type="file" id="file-import-xlsx" accept=".xlsx, .xls" style="display: none;">
+                    </div>
+                </div>
+                <div class="card settings-card">
+                    <h3>Gestión de Datos</h3>
+                    <button id="btn-clear-data" class="btn btn-danger">Borrar Todos los Datos</button>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Modals -->
+
+    <!-- Transaction Modal -->
+    <div id="modal-transaction" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="modal-transaction-title">Nueva Transacción</h2>
+            <form id="form-transaction">
+                <input type="hidden" id="trans-id">
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <div class="switch-toggle">
+                        <input type="radio" id="type-expense" name="type" value="expense" checked>
+                        <label for="type-expense">Gasto</label>
+                        <input type="radio" id="type-income" name="type" value="income">
+                        <label for="type-income">Ingreso</label>
+                        <input type="radio" id="type-transfer" name="type" value="transfer">
+                        <label for="type-transfer">Transferencia</label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="group-from-account">
+                    <label>Cuenta</label>
+                    <select id="trans-account" required></select>
+                </div>
+
+                <div class="form-group hidden" id="group-to-account">
+                    <label>Cuenta Destino</label>
+                    <select id="trans-to-account"></select>
+                </div>
+
+                <div class="form-group" id="group-category">
+                    <label>Categoría</label>
+                    <div class="category-select-wrapper">
+                        <select id="trans-category"></select>
+                        <button type="button" id="btn-manage-categories" class="icon-btn-small"
+                            title="Editar Categorías"><i class="fa-solid fa-pencil"></i></button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Monto</label>
+                    <input type="number" id="trans-amount" step="0.01" required placeholder="0.00">
+                </div>
+
+                <div class="form-group">
+                    <label>Fecha</label>
+                    <input type="date" id="trans-date" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Nota</label>
+                    <input type="text" id="trans-note" placeholder="Descripción breve">
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Account Modal -->
+    <div id="modal-account" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2 id="modal-account-title">Nueva Cuenta</h2>
+            <form id="form-account">
+                <input type="hidden" id="acc-id">
+                <div class="form-group">
+                    <label>Nombre de la Cuenta</label>
+                    <input type="text" id="acc-name" required placeholder="Ej. Ahorros, Efectivo">
+                </div>
+                <div class="form-group">
+                    <label>Tipo</label>
+                    <select id="acc-type">
+                        <option value="cash">Efectivo</option>
+                        <option value="debit">Tarjeta de Débito</option>
+                        <option value="credit">Tarjeta de Crédito</option>
+                        <option value="savings">Ahorros</option>
+                        <option value="investment">Inversión</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Color</label>
+                    <input type="color" id="acc-color" value="#3498db">
+                </div>
+                <div class="form-group">
+                    <label>Saldo Inicial</label>
+                    <input type="number" id="acc-balance" step="0.01" value="0">
+                </div>
+                <div class="form-group">
+                    <label>Presupuesto Mensual (Límite de Gasto)</label>
+                    <input type="number" id="acc-budget" step="0.01" placeholder="Ej. 5000">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Guardar Cuenta</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Categories Management Modal -->
+    <div id="modal-categories" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <span class="close-modal">&times;</span>
+            <h2>Gestionar Categorías</h2>
+
+            <div class="categories-layout" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- Left: List -->
+                <div class="categories-list-section">
+                    <h3>Existentes</h3>
+                    <div class="tabs">
+                        <button type="button" class="tab-btn active" data-tab="expense">Gastos</button>
+                        <button type="button" class="tab-btn" data-tab="income">Ingresos</button>
+                    </div>
+                    <div id="categories-list" class="list-container"
+                        style="max-height: 300px; overflow-y: auto; margin-top: 10px; border: 1px solid #eee; padding: 10px; border-radius: 8px;">
+                        <!-- Injected via JS -->
+                    </div>
+                </div>
+
+                <!-- Right: Form -->
+                <div class="categories-form-section">
+                    <h3 id="cat-form-title">Nueva Categoría</h3>
+                    <form id="form-category">
+                        <input type="hidden" id="cat-id">
+                        <div class="form-group">
+                            <label>Nombre</label>
+                            <input type="text" id="cat-name" required placeholder="Ej. Comida">
+                        </div>
+                        <div class="form-group">
+                            <label>Icono (Emoji)</label>
+                            <input type="text" id="cat-icon" required placeholder="🍔" maxlength="2">
+                        </div>
+                        <div class="form-group">
+                            <label>Presupuesto Mensual</label>
+                            <input type="number" id="cat-budget" placeholder="0.00" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label>Tipo</label>
+                            <select id="cat-type" required>
+                                <option value="expense">Gasto</option>
+                                <option value="income">Ingreso</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Guardar</button>
+                            <button type="button" id="btn-cancel-cat-edit" class="btn btn-secondary hidden">Cancelar
+                                Edición</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="script.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registrado'))
+                    .catch(err => console.log('Error al registrar SW', err));
+            });
+        }
+    </script>
+</body>
+
+</html>
