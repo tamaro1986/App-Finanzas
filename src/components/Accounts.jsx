@@ -1,11 +1,20 @@
+// ============================================================================
+// IMPORTS: React, iconos de Lucide, y funciones de sincronización con Supabase
+// ============================================================================
 import React, { useState, useEffect } from 'react'
 import { Plus, CreditCard, Wallet, Trash2 } from 'lucide-react'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
+// ============================================================================
+// COMPONENTE: Accounts
+// PROPÓSITO: Gestionar cuentas bancarias, efectivo, tarjetas, etc.
+// CONECTADO A: Supabase tabla 'accounts' + localStorage como fallback
+// ============================================================================
 const Accounts = () => {
-    const [accounts, setAccounts] = useState(() => {
-        const saved = localStorage.getItem('finanzas_accounts')
-        return saved ? JSON.parse(saved) : []
-    })
+    // Estado para almacenar el array de cuentas
+    // Inicialmente vacío, se cargará desde Supabase en useEffect
+    const [accounts, setAccounts] = useState([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newAccount, setNewAccount] = useState({
         name: '',
@@ -24,32 +33,49 @@ const Accounts = () => {
         }
     })
 
+    // ============================================================================
+    // EFFECT: Cargar datos desde Supabase al montar el componente
+    // Se ejecuta solo una vez cuando el componente se monta
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_accounts', JSON.stringify(accounts))
+        // Función asíncrona para cargar datos desde Supabase
+        const loadAccounts = async () => {
+            // initializeData intenta cargar desde Supabase, si falla usa localStorage
+            const data = await initializeData('accounts', 'finanzas_accounts')
+            // Actualizar el estado con los datos cargados
+            setAccounts(data)
+        }
+        // Ejecutar la función de carga
+        loadAccounts()
+    }, []) // Array vacío = solo se ejecuta al montar
+
+    // ============================================================================
+    // EFFECT: Sincronizar con localStorage cada vez que cambian las cuentas
+    // Este es un fallback por si Supabase falla
+    // ============================================================================
+    useEffect(() => {
+        // Solo sincronizar si hay cuentas (evitar sobrescribir en carga inicial)
+        if (accounts.length > 0) {
+            localStorage.setItem('finanzas_accounts', JSON.stringify(accounts))
+        }
     }, [accounts])
 
-    const handleAddAccount = (e) => {
-        e.preventDefault()
-        const account = {
-            id: crypto.randomUUID(),
-            ...newAccount,
-            balance: parseFloat(newAccount.balance),
-            loanDetails: newAccount.type === 'Préstamo' ? {
-                ...newAccount.loanDetails,
-                loanAmount: parseFloat(newAccount.loanDetails.loanAmount),
-                interestRate: parseFloat(newAccount.interestRate), // Fixing this: newAccount doesn't have interestRate directly, it's in loanDetails
-                term: parseInt(newAccount.loanDetails.term),
-                commissions: parseFloat(newAccount.loanDetails.commissions),
-                insurance: parseFloat(newAccount.loanDetails.insurance)
-            } : null
-        }
-        // Actually, let's fix the nesting in handleAddAccount
+    // ============================================================================
+    // FUNCIÓN: handleAddAccount
+    // PROPÓSITO: Agregar una nueva cuenta y sincronizarla con Supabase
+    // PARÁMETROS: e - Evento del formulario
+    // ============================================================================
+    const handleAddAccount = async (e) => {
+        e.preventDefault() // Prevenir recarga de página
+
+        // Crear objeto de cuenta procesado con todos los datos
         const processedAccount = {
-            id: crypto.randomUUID(),
+            id: crypto.randomUUID(), // Generar ID único
             name: newAccount.name,
             type: newAccount.type,
-            balance: parseFloat(newAccount.balance),
+            balance: parseFloat(newAccount.balance), // Convertir a número
             color: newAccount.color,
+            // Si es préstamo, incluir detalles del préstamo, si no, null
             loanDetails: newAccount.type === 'Préstamo' ? {
                 ...newAccount.loanDetails,
                 loanAmount: parseFloat(newAccount.loanDetails.loanAmount),
@@ -58,10 +84,22 @@ const Accounts = () => {
                 commissions: parseFloat(newAccount.loanDetails.commissions),
                 insurance: parseFloat(newAccount.loanDetails.insurance)
             } : null,
-            paidInstallments: []
+            paidInstallments: [] // Array vacío para pagos futuros
         }
-        setAccounts([...accounts, processedAccount])
+
+        // Crear nuevo array con la cuenta agregada
+        const updatedAccounts = [...accounts, processedAccount]
+
+        // Actualizar estado local (React)
+        setAccounts(updatedAccounts)
+
+        // Sincronizar con Supabase (asíncrono, no bloqueante)
+        await saveToSupabase('accounts', 'finanzas_accounts', processedAccount, updatedAccounts)
+
+        // Cerrar modal
         setIsModalOpen(false)
+
+        // Resetear formulario a valores iniciales
         setNewAccount({
             name: '',
             type: 'Ahorros',
@@ -80,9 +118,22 @@ const Accounts = () => {
         })
     }
 
-    const deleteAccount = (id) => {
+    // ============================================================================
+    // FUNCIÓN: deleteAccount
+    // PROPÓSITO: Eliminar una cuenta y sincronizar con Supabase
+    // PARÁMETROS: id - ID de la cuenta a eliminar
+    // ============================================================================
+    const deleteAccount = async (id) => {
+        // Confirmar con el usuario antes de eliminar
         if (window.confirm('¿Eliminar esta cuenta?')) {
-            setAccounts(accounts.filter(a => a.id !== id))
+            // Filtrar el array para remover la cuenta con el ID especificado
+            const updatedAccounts = accounts.filter(a => a.id !== id)
+
+            // Actualizar estado local
+            setAccounts(updatedAccounts)
+
+            // Sincronizar eliminación con Supabase
+            await deleteFromSupabase('accounts', 'finanzas_accounts', id, updatedAccounts)
         }
     }
 
