@@ -1,7 +1,12 @@
+// ============================================================================
+// IMPORTS: React, iconos, utilidades de fecha y sincronización con Supabase
+// ============================================================================
 import React, { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+// Importar función para inicializar datos desde Supabase
+import { initializeData } from '../lib/supabaseSync'
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     <div className="card group hover:border-blue-200 transition-all duration-300">
@@ -33,30 +38,47 @@ const Dashboard = () => {
         recentTransactions: []
     })
 
+    // ============================================================================
+    // EFFECT: Cargar y calcular estadísticas desde Supabase
+    // Calcula: balance total, ingresos del mes, gastos del mes, transacciones recientes
+    // ============================================================================
     useEffect(() => {
-        const transactions = JSON.parse(localStorage.getItem('finanzas_transactions') || '[]')
-        const currentMonth = format(new Date(), 'yyyy-MM')
+        // Función asíncrona para cargar datos desde Supabase
+        const loadStats = async () => {
+            // Cargar transacciones desde Supabase (con fallback a localStorage)
+            const transactions = await initializeData('transactions', 'finanzas_transactions')
+            // Obtener mes actual en formato YYYY-MM
+            const currentMonth = format(new Date(), 'yyyy-MM')
 
-        const income = transactions
-            .filter(t => t.type === 'income' && t.date.startsWith(currentMonth))
-            .reduce((sum, t) => sum + t.amount, 0)
+            // Calcular ingresos del mes actual
+            const income = transactions
+                .filter(t => t.type === 'income' && t.date.startsWith(currentMonth))
+                .reduce((sum, t) => sum + t.amount, 0)
 
-        const expense = transactions
-            .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
-            .reduce((sum, t) => sum + t.amount, 0)
+            // Calcular gastos del mes actual
+            const expense = transactions
+                .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
+                .reduce((sum, t) => sum + t.amount, 0)
 
-        const balance = transactions.reduce((sum, t) => {
-            if (t.type === 'income') return sum + t.amount
-            if (t.type === 'expense') return sum - t.amount
-            return sum
-        }, 0)
+            // Calcular balance total (todos los tiempos)
+            const balance = transactions.reduce((sum, t) => {
+                if (t.type === 'income') return sum + t.amount
+                if (t.type === 'expense') return sum - t.amount
+                return sum
+            }, 0)
 
-        const recent = [...transactions]
-            .sort((a, b) => new Date(b.date) - new Date(a.date))
-            .slice(0, 5)
+            // Obtener las 5 transacciones más recientes
+            const recent = [...transactions]
+                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                .slice(0, 5)
 
-        setStats({ balance, income, expense, recentTransactions: recent })
-    }, [])
+            // Actualizar estado con las estadísticas calculadas
+            setStats({ balance, income, expense, recentTransactions: recent })
+        }
+
+        // Ejecutar la función de carga
+        loadStats()
+    }, []) // Array vacío = solo se ejecuta al montar el componente
 
     const todayStr = format(new Date(), "EEEE, d 'de' MMMM yyyy", { locale: es })
 
