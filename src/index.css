@@ -5,6 +5,11 @@
 @layer base {
   :root {
     --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-serif: 'Georgia', serif;
+    /* Colores de marca NegociosGarcia */
+    --brand-navy: #1e3a5f;
+    --brand-green: #0d8b5f;
+    --brand-gold: #d4af37;
   }
 
   body {
@@ -15,22 +20,34 @@
 
 @layer components {
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-slate-200/60 p-6;
+    @apply bg-white rounded-2xl shadow-sm border border-slate-100 p-6 hover:shadow-md transition-all;
   }
 
   .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2 active:scale-[0.98];
+    @apply bg-gradient-to-r from-[#1e3a5f] to-[#0d8b5f] hover:from-[#0d8b5f] hover:to-[#1e3a5f] text-white font-bold py-2.5 px-5 rounded-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] shadow-lg shadow-emerald-200;
   }
 
   .btn-secondary {
-    @apply bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-medium py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2 active:scale-[0.98];
+    @apply bg-white hover:bg-emerald-50 text-[#1e3a5f] border-2 border-[#0d8b5f]/20 hover:border-[#0d8b5f] font-semibold py-2.5 px-5 rounded-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98];
   }
 
   .input-field {
-    @apply block w-full rounded-lg border-slate-200 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none border;
+    @apply block w-full rounded-xl border-2 border-slate-100 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:border-[#0d8b5f] focus:ring-4 focus:ring-[#0d8b5f]/10 transition-all outline-none;
   }
 
   .sidebar-link {
     @apply flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200;
+  }
+
+  .badge-primary {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-[#0d8b5f]/10 text-[#0d8b5f] border border-[#0d8b5f]/20;
+  }
+
+  .badge-secondary {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-[#1e3a5f]/10 text-[#1e3a5f] border border-[#1e3a5f]/20;
+  }
+
+  .badge-accent {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20;
   }
 }
