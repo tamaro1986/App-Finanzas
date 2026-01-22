@@ -1,9 +1,14 @@
+// ============================================================================
+// IMPORTS: React, iconos, animaciones y categorías
+// ============================================================================
 import React, { useState, useEffect, useMemo } from 'react'
 import { Plus, Copy, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DEFAULT_CATEGORIES } from '../constants/categories'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase } from '../lib/supabaseSync'
 
 const ExecutionChart = ({ data }) => {
     const maxVal = Math.max(...data.map(d => Math.max(d.budgeted, d.executed)), 100)
@@ -51,22 +56,41 @@ const ExecutionChart = ({ data }) => {
     )
 }
 
+// ============================================================================
+// COMPONENTE: BudgetModule
+// PROPÓSITO: Gestionar presupuestos mensuales y análisis de gastos
+// CONECTADO A: Supabase tabla 'budgets'
+// ============================================================================
 const BudgetModule = () => {
     const [activeTab, setActiveTab] = useState('config') // 'config' or 'analysis'
     const [currentPeriod, setCurrentPeriod] = useState(format(new Date(), 'yyyy-MM'))
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All')
 
-    const [budgets, setBudgets] = useState(() => {
-        const saved = localStorage.getItem('finanzas_budgets')
-        return saved ? JSON.parse(saved) : {}
-    })
-    const [transactions, setTransactions] = useState(() => {
-        const saved = localStorage.getItem('finanzas_transactions')
-        return saved ? JSON.parse(saved) : []
-    })
+    // Estado para presupuestos - se carga desde Supabase
+    const [budgets, setBudgets] = useState({})
+    // Estado para transacciones - se carga desde Supabase
+    const [transactions, setTransactions] = useState([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense' })
 
+    // ============================================================================
+    // EFFECT: Cargar datos desde Supabase al montar componente
+    // ============================================================================
+    useEffect(() => {
+        const loadData = async () => {
+            // Cargar presupuestos desde Supabase
+            const budgetData = await initializeData('budgets', 'finanzas_budgets')
+            setBudgets(budgetData || {})
+            // Cargar transacciones desde Supabase
+            const txData = await initializeData('transactions', 'finanzas_transactions')
+            setTransactions(txData || [])
+        }
+        loadData()
+    }, [])
+
+    // ============================================================================
+    // EFFECT: Escuchar cambios de storage (sincronización entre pestañas)
+    // ============================================================================
     useEffect(() => {
         const handleStorageChange = () => {
             setTransactions(JSON.parse(localStorage.getItem('finanzas_transactions') || '[]'))
@@ -90,16 +114,33 @@ const BudgetModule = () => {
         }
     }, [currentPeriod, budgets]);
 
+    // ============================================================================
+    // EFFECT: Sincronizar presupuestos con Supabase y localStorage
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_budgets', JSON.stringify(budgets))
+        const syncBudgets = async () => {
+            // Guardar en localStorage
+            localStorage.setItem('finanzas_budgets', JSON.stringify(budgets))
+            // Sincronizar con Supabase
+            if (Object.keys(budgets).length > 0) {
+                await saveToSupabase('budgets', 'finanzas_budgets', budgets, [budgets])
+            }
+        }
+        syncBudgets()
     }, [budgets])
 
     const currentMonthBudgets = budgets[currentPeriod] || []
 
+    // ============================================================================
+    // FUNCIÓN: handleAddCategory
+    // PROPÓSITO: Agregar nueva categoría al presupuesto del mes actual
+    // SINCRONIZA: Con Supabase automáticamente via useEffect
+    // ============================================================================
     const handleAddCategory = (e) => {
         e.preventDefault()
         if (!newCategory.name || !newCategory.amount) return
 
+        // Crear objeto de categoría
         const category = {
             id: crypto.randomUUID(),
             name: newCategory.name,
@@ -108,15 +149,22 @@ const BudgetModule = () => {
             actual: 0
         }
 
+        // Actualizar presupuestos (se sincroniza automáticamente)
         setBudgets(prev => ({
             ...prev,
             [currentPeriod]: [...(prev[currentPeriod] || []), category]
         }))
 
+        // Resetear formulario
         setNewCategory({ name: '', amount: '', type: 'expense' })
         setIsModalOpen(false)
     }
 
+    // ============================================================================
+    // FUNCIÓN: handleDeleteCategory
+    // PROPÓSITO: Eliminar categoría del presupuesto
+    // SINCRONIZA: Con Supabase automáticamente via useEffect
+    // ============================================================================
     const handleDeleteCategory = (id) => {
         if (!confirm('¿Estás seguro de eliminar esta categoría?')) return
         setBudgets(prev => ({
@@ -125,6 +173,11 @@ const BudgetModule = () => {
         }))
     }
 
+    // ============================================================================
+    // FUNCIÓN: clonePreviousBudget
+    // PROPÓSITO: Clonar presupuesto del mes anterior al mes actual
+    // SINCRONIZA: Con Supabase automáticamente via useEffect
+    // ============================================================================
     const clonePreviousBudget = () => {
         const prevPeriod = format(subMonths(parseISO(`${currentPeriod}-01`), 1), 'yyyy-MM')
         const prevBudgets = budgets[prevPeriod]
@@ -138,6 +191,7 @@ const BudgetModule = () => {
             return
         }
 
+        // Clonar presupuestos con nuevos IDs
         const clonedBudgets = prevBudgets.map(b => ({ ...b, id: crypto.randomUUID(), actual: 0 }))
         setBudgets(prev => ({
             ...prev,

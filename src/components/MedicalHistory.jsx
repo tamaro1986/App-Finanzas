@@ -1,18 +1,23 @@
+// ============================================================================
+// IMPORTS: React, iconos y utilidades
+// ============================================================================
 import React, { useState, useEffect, useRef } from 'react'
 import { Plus, Trash2, Calendar, Stethoscope, User, Pill, ArrowRight, Clock, Clipboard, Search, X, FileText, CalendarCheck, Users, Ruler, Weight, Info, Camera, Mic, Square, Play, Paperclip, MessageSquare } from 'lucide-react'
 import { format, isAfter, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
+// ============================================================================
+// COMPONENTE: MedicalHistory
+// PROPÓSITO: Gestionar historial médico y pacientes
+// CONECTADO A: Supabase tablas 'medical_records' y 'patients'
+// ============================================================================
 const MedicalHistory = () => {
     const [activeTab, setActiveTab] = useState('records')
-    const [records, setRecords] = useState(() => {
-        const saved = localStorage.getItem('finanzas_medical_records')
-        return saved ? JSON.parse(saved) : []
-    })
-    const [patients, setPatients] = useState(() => {
-        const saved = localStorage.getItem('finanzas_patients')
-        return saved ? JSON.parse(saved) : []
-    })
+    // Estados - se cargan desde Supabase
+    const [records, setRecords] = useState([])
+    const [patients, setPatients] = useState([])
 
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isPatientModalOpen, setIsPatientModalOpen] = useState(false)
@@ -38,12 +43,44 @@ const MedicalHistory = () => {
 
     const [newPatient, setNewPatient] = useState({ name: '', age: '', bloodType: '', allergies: '', notes: '' })
 
+    // ============================================================================
+    // EFFECT: Cargar datos desde Supabase
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_medical_records', JSON.stringify(records))
+        const loadData = async () => {
+            const recordsData = await initializeData('medical_records', 'finanzas_medical_records')
+            setRecords(recordsData)
+            const patientsData = await initializeData('patients', 'finanzas_patients')
+            setPatients(patientsData)
+        }
+        loadData()
+    }, [])
+
+    // ============================================================================
+    // EFFECT: Sincronizar con Supabase
+    // ============================================================================
+    useEffect(() => {
+        const sync = async () => {
+            localStorage.setItem('finanzas_medical_records', JSON.stringify(records))
+            if (records.length > 0) {
+                for (const record of records) {
+                    await saveToSupabase('medical_records', 'finanzas_medical_records', record, records)
+                }
+            }
+        }
+        sync()
     }, [records])
 
     useEffect(() => {
-        localStorage.setItem('finanzas_patients', JSON.stringify(patients))
+        const sync = async () => {
+            localStorage.setItem('finanzas_patients', JSON.stringify(patients))
+            if (patients.length > 0) {
+                for (const patient of patients) {
+                    await saveToSupabase('patients', 'finanzas_patients', patient, patients)
+                }
+            }
+        }
+        sync()
     }, [patients])
 
     // --- Audio Logic ---
@@ -120,8 +157,21 @@ const MedicalHistory = () => {
         setNewPatient({ name: '', age: '', bloodType: '', allergies: '', notes: '' })
     }
 
-    const deleteRecord = (id) => { if (window.confirm('¿Eliminar este registro médico?')) setRecords(records.filter(r => r.id !== id)) }
-    const deletePatient = (id) => { if (window.confirm('¿Eliminar este paciente?')) setPatients(patients.filter(p => p.id !== id)) }
+    const deleteRecord = async (id) => {
+        if (window.confirm('¿Eliminar este registro médico?')) {
+            const updated = records.filter(r => r.id !== id)
+            setRecords(updated)
+            await deleteFromSupabase('medical_records', 'finanzas_medical_records', id, updated)
+        }
+    }
+
+    const deletePatient = async (id) => {
+        if (window.confirm('¿Eliminar este paciente?')) {
+            const updated = patients.filter(p => p.id !== id)
+            setPatients(updated)
+            await deleteFromSupabase('patients', 'finanzas_patients', id, updated)
+        }
+    }
 
     const filteredRecords = records.filter(r =>
         r.personName.toLowerCase().includes(searchQuery.toLowerCase()) ||

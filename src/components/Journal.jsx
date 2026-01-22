@@ -1,33 +1,30 @@
+// ============================================================================
+// IMPORTS: React, iconos, animaciones y utilidades
+// ============================================================================
 import React, { useState, useEffect, useMemo } from 'react'
 import { Plus, Trash2, Brain, Calendar, X, Edit3, Sparkles, MessageCircle, AlertCircle, RefreshCw, Heart, Smile, Star, Search, Filter, ShieldCheck, ChevronRight, TrendingUp, Pill, Wind, Stethoscope, Activity, Moon, Settings2, Timer } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
+// ============================================================================
+// COMPONENTE: Journal
+// PROPÓSITO: Diario de salud mental con TCC y bitácora médica
+// CONECTADO A: Supabase tablas 'journal_tcc', 'journal_health_log', 'medications'
+// ============================================================================
 const Journal = () => {
     const [activeTab, setActiveTab] = useState('tcc')
     const [searchQuery, setSearchQuery] = useState('')
     const [isThinking, setIsThinking] = useState(false)
     const [isModalOpen, setIsModalOpen] = useState(false)
 
-    // Medication Catalog State
-    const [medicationList, setMedicationList] = useState(() => {
-        const saved = localStorage.getItem('finanzas_journal_med_list')
-        return saved ? JSON.parse(saved) : ["Sertralina", "Quetiapina", "Magnesium", "Ashwaganda", "Ansiovit", "Somit"]
-    })
+    // Estados - se cargan desde Supabase
+    const [medicationList, setMedicationList] = useState(["Sertralina", "Quetiapina", "Magnesium", "Ashwaganda", "Ansiovit", "Somit"])
     const [newMedName, setNewMedName] = useState('')
-
-    // TCC State
-    const [tccEntries, setTccEntries] = useState(() => {
-        const saved = localStorage.getItem('finanzas_journal_cbt')
-        return saved ? JSON.parse(saved) : []
-    })
-
-    // Health Log (Bitácora) State
-    const [logEntries, setLogEntries] = useState(() => {
-        const saved = localStorage.getItem('finanzas_journal_health_log')
-        return saved ? JSON.parse(saved) : []
-    })
+    const [tccEntries, setTccEntries] = useState([])
+    const [logEntries, setLogEntries] = useState([])
 
     // States for New Entries
     const [newTccEntry, setNewTccEntry] = useState({
@@ -59,16 +56,54 @@ const Journal = () => {
         setNewLogEntry(prev => ({ ...prev, medications: initialMeds }))
     }, [medicationList])
 
+    // ============================================================================
+    // EFFECT: Cargar datos desde Supabase
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_journal_cbt', JSON.stringify(tccEntries))
+        const loadData = async () => {
+            const tccData = await initializeData('journal_tcc', 'finanzas_journal_cbt')
+            setTccEntries(tccData)
+            const logData = await initializeData('journal_health_log', 'finanzas_journal_health_log')
+            setLogEntries(logData)
+            const medData = await initializeData('medications', 'finanzas_journal_med_list')
+            if (medData && medData.length > 0) setMedicationList(medData)
+        }
+        loadData()
+    }, [])
+
+    // ============================================================================
+    // EFFECT: Sincronizar con Supabase
+    // ============================================================================
+    useEffect(() => {
+        const sync = async () => {
+            localStorage.setItem('finanzas_journal_cbt', JSON.stringify(tccEntries))
+            if (tccEntries.length > 0) {
+                for (const entry of tccEntries) {
+                    await saveToSupabase('journal_tcc', 'finanzas_journal_cbt', entry, tccEntries)
+                }
+            }
+        }
+        sync()
     }, [tccEntries])
 
     useEffect(() => {
-        localStorage.setItem('finanzas_journal_health_log', JSON.stringify(logEntries))
+        const sync = async () => {
+            localStorage.setItem('finanzas_journal_health_log', JSON.stringify(logEntries))
+            if (logEntries.length > 0) {
+                for (const entry of logEntries) {
+                    await saveToSupabase('journal_health_log', 'finanzas_journal_health_log', entry, logEntries)
+                }
+            }
+        }
+        sync()
     }, [logEntries])
 
     useEffect(() => {
-        localStorage.setItem('finanzas_journal_med_list', JSON.stringify(medicationList))
+        const sync = async () => {
+            localStorage.setItem('finanzas_journal_med_list', JSON.stringify(medicationList))
+            await saveToSupabase('medications', 'finanzas_journal_med_list', { list: medicationList }, [medicationList])
+        }
+        sync()
     }, [medicationList])
 
     const handleAddMedication = () => {
@@ -154,15 +189,19 @@ const Journal = () => {
         })
     }
 
-    const deleteTccEntry = (id) => {
+    const deleteTccEntry = async (id) => {
         if (confirm('¿Eliminar este registro TCC?')) {
-            setTccEntries(tccEntries.filter(e => e.id !== id))
+            const updated = tccEntries.filter(e => e.id !== id)
+            setTccEntries(updated)
+            await deleteFromSupabase('journal_tcc', 'finanzas_journal_cbt', id, updated)
         }
     }
 
-    const deleteLogEntry = (id) => {
+    const deleteLogEntry = async (id) => {
         if (confirm('¿Eliminar este registro de bitácora?')) {
-            setLogEntries(logEntries.filter(e => e.id !== id))
+            const updated = logEntries.filter(e => e.id !== id)
+            setLogEntries(updated)
+            await deleteFromSupabase('journal_health_log', 'finanzas_journal_health_log', id, updated)
         }
     }
 
