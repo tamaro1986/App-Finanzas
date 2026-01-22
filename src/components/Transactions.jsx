@@ -1,18 +1,24 @@
+// ============================================================================
+// IMPORTS: React, iconos, utilidades y funciones de sincronización
+// ============================================================================
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { DEFAULT_CATEGORIES } from '../constants/categories'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
+// ============================================================================
+// COMPONENTE: Transactions
+// PROPÓSITO: Gestionar transacciones (ingresos y gastos)
+// CONECTADO A: Supabase tablas 'transactions' y 'accounts'
+// ============================================================================
 const Transactions = () => {
-    const [transactions, setTransactions] = useState(() => {
-        const saved = localStorage.getItem('finanzas_transactions')
-        return saved ? JSON.parse(saved) : []
-    })
-    const [accounts, setAccounts] = useState(() => {
-        const saved = localStorage.getItem('finanzas_accounts')
-        return saved ? JSON.parse(saved) : []
-    })
+    // Estado para almacenar transacciones - se carga desde Supabase
+    const [transactions, setTransactions] = useState([])
+    // Estado para almacenar cuentas - se carga desde Supabase
+    const [accounts, setAccounts] = useState([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [filterType, setFilterType] = useState('all')
@@ -70,43 +76,76 @@ const Transactions = () => {
         }
     };
 
+    // ============================================================================
+    // EFFECT: Cargar datos desde Supabase al montar el componente
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_transactions', JSON.stringify(transactions))
+        const loadData = async () => {
+            // Cargar transacciones desde Supabase
+            const txData = await initializeData('transactions', 'finanzas_transactions')
+            setTransactions(txData)
+            // Cargar cuentas desde Supabase
+            const accData = await initializeData('accounts', 'finanzas_accounts')
+            setAccounts(accData)
+        }
+        loadData()
+    }, [])
+
+    // ============================================================================
+    // EFFECT: Sincronizar con localStorage (fallback)
+    // ============================================================================
+    useEffect(() => {
+        if (transactions.length > 0) {
+            localStorage.setItem('finanzas_transactions', JSON.stringify(transactions))
+        }
     }, [transactions])
 
-    // Set default account when modal opens
+    // ============================================================================
+    // EFFECT: Establecer cuenta por defecto al abrir modal
+    // ============================================================================
     useEffect(() => {
         if (isModalOpen && accounts.length > 0 && !newTx.accountId) {
             setNewTx(prev => ({ ...prev, accountId: accounts[0].id }))
         }
     }, [isModalOpen, accounts])
 
-    const handleAddTransaction = (e) => {
+    // ============================================================================
+    // FUNCIÓN: handleAddTransaction
+    // PROPÓSITO: Agregar nueva transacción y actualizar balance de cuenta
+    // SINCRONIZA: Tanto la transacción como la cuenta actualizada con Supabase
+    // ============================================================================
+    const handleAddTransaction = async (e) => {
         e.preventDefault()
+        // Validar que se haya seleccionado una cuenta
         if (!newTx.accountId) {
             alert('Por favor selecciona una cuenta.')
             return
         }
 
+        // Crear objeto de transacción con ID único
         const transaction = {
             id: crypto.randomUUID(),
             ...newTx,
             amount: parseFloat(newTx.amount)
         }
 
+        // Agregar transacción al inicio del array
         const updatedTransactions = [transaction, ...transactions]
         setTransactions(updatedTransactions)
-        localStorage.setItem('finanzas_transactions', JSON.stringify(updatedTransactions))
+        // Sincronizar transacción con Supabase
+        await saveToSupabase('transactions', 'finanzas_transactions', transaction, updatedTransactions)
 
-        // Update Account Balance
+        // ========================================================================
+        // Actualizar balance de la cuenta afectada
+        // ========================================================================
         const updatedAccounts = accounts.map(acc => {
             if (acc.id === newTx.accountId) {
                 let newBalance = acc.balance
+                // Para préstamos: ingreso reduce deuda, gasto aumenta deuda
                 if (acc.type === 'Préstamo') {
-                    // For loans, income reduces balance (debt), expense increases it
                     newBalance = newTx.type === 'income' ? acc.balance - transaction.amount : acc.balance + transaction.amount
                 } else {
-                    // For regular accounts, income increases, expense decreases
+                    // Para cuentas normales: ingreso aumenta, gasto disminuye
                     newBalance = newTx.type === 'income' ? acc.balance + transaction.amount : acc.balance - transaction.amount
                 }
                 return { ...acc, balance: newBalance }
@@ -114,8 +153,14 @@ const Transactions = () => {
             return acc
         })
         setAccounts(updatedAccounts)
-        localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
 
+        // Sincronizar cuenta actualizada con Supabase
+        const updatedAccount = updatedAccounts.find(acc => acc.id === newTx.accountId)
+        if (updatedAccount) {
+            await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+        }
+
+        // Cerrar modal y resetear formulario
         setIsModalOpen(false)
         setNewTx({
             date: format(new Date(), 'yyyy-MM-dd'),
@@ -128,18 +173,25 @@ const Transactions = () => {
         })
     }
 
-    const deleteTransaction = (id) => {
+    // ============================================================================
+    // FUNCIÓN: deleteTransaction
+    // PROPÓSITO: Eliminar transacción y revertir cambio en balance de cuenta
+    // SINCRONIZA: Eliminación de transacción y cuenta actualizada con Supabase
+    // ============================================================================
+    const deleteTransaction = async (id) => {
         if (window.confirm('¿Eliminar esta transacción?')) {
+            // Encontrar la transacción a eliminar
             const txToDelete = transactions.find(t => t.id === id)
             if (txToDelete) {
+                // Revertir el cambio en el balance de la cuenta
                 const updatedAccounts = accounts.map(acc => {
                     if (acc.id === txToDelete.accountId) {
                         let newBalance = acc.balance
                         if (acc.type === 'Préstamo') {
-                            // Revert: income reduced balance, so we add it back
+                            // Revertir: ingreso había reducido balance, ahora lo sumamos
                             newBalance = txToDelete.type === 'income' ? acc.balance + txToDelete.amount : acc.balance - txToDelete.amount
                         } else {
-                            // Revert: income increased balance, so we subtract it
+                            // Revertir: ingreso había aumentado balance, ahora lo restamos
                             newBalance = txToDelete.type === 'income' ? acc.balance - txToDelete.amount : acc.balance + txToDelete.amount
                         }
                         return { ...acc, balance: newBalance }
@@ -147,11 +199,19 @@ const Transactions = () => {
                     return acc
                 })
                 setAccounts(updatedAccounts)
-                localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
+
+                // Sincronizar cuenta actualizada con Supabase
+                const updatedAccount = updatedAccounts.find(acc => acc.id === txToDelete.accountId)
+                if (updatedAccount) {
+                    await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+                }
             }
+
+            // Eliminar transacción del array
             const updatedTransactions = transactions.filter(t => t.id !== id)
             setTransactions(updatedTransactions)
-            localStorage.setItem('finanzas_transactions', JSON.stringify(updatedTransactions))
+            // Sincronizar eliminación con Supabase
+            await deleteFromSupabase('transactions', 'finanzas_transactions', id, updatedTransactions)
         }
     }
 
