@@ -1,4 +1,7 @@
-import React, { useState } from 'react'
+// ============================================================================
+// IMPORTS: Componentes y autenticación
+// ============================================================================
+import React, { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
 import BudgetModule from './components/BudgetModule'
@@ -10,11 +13,51 @@ import MedicalHistory from './components/MedicalHistory'
 import Journal from './components/Journal'
 import DebtModule from './components/DebtModule'
 import InvestmentPortfolio from './components/InvestmentPortfolio'
-import { Menu, X } from 'lucide-react'
+import Auth from './components/Auth'
+import { Menu, X, LogOut, Loader } from 'lucide-react'
+import { supabase } from './lib/supabase'
 
+// ============================================================================
+// COMPONENTE PRINCIPAL: App
+// PROPÓSITO: Gestionar autenticación y navegación
+// ============================================================================
 function App() {
     const [activeView, setActiveView] = useState('dashboard')
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+    // Estado de autenticación
+    const [user, setUser] = useState(null)
+    const [loading, setLoading] = useState(true)
+
+    // ============================================================================
+    // EFFECT: Verificar sesión al cargar la app
+    // ============================================================================
+    useEffect(() => {
+        // Verificar si hay una sesión activa
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null)
+            setLoading(false)
+        })
+
+        // Escuchar cambios en la autenticación
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null)
+        })
+
+        return () => subscription.unsubscribe()
+    }, [])
+
+    // ============================================================================
+    // FUNCIÓN: handleLogout
+    // PROPÓSITO: Cerrar sesión del usuario
+    // ============================================================================
+    const handleLogout = async () => {
+        if (confirm('¿Cerrar sesión?')) {
+            await supabase.auth.signOut()
+            setUser(null)
+        }
+    }
 
     const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen)
 
@@ -45,6 +88,28 @@ function App() {
         }
     }
 
+    // ============================================================================
+    // RENDERIZADO CONDICIONAL: Loading / Auth / App
+    // ============================================================================
+
+    // Mostrar pantalla de carga mientras se verifica la sesión
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
+                <div className="text-center">
+                    <Loader className="animate-spin text-blue-600 mx-auto mb-4" size={48} />
+                    <p className="text-slate-600 font-bold">Cargando...</p>
+                </div>
+            </div>
+        )
+    }
+
+    // Mostrar pantalla de autenticación si no hay usuario
+    if (!user) {
+        return <Auth onAuthSuccess={(user) => setUser(user)} />
+    }
+
+    // Mostrar aplicación principal si hay usuario autenticado
     return (
         <div className="flex h-screen bg-[#f9fafb] overflow-hidden font-sans">
             {/* Mobile Header */}
@@ -52,13 +117,22 @@ function App() {
                 <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                     FinanzasPro
                 </span>
-                <button
-                    onClick={toggleSidebar}
-                    className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                    aria-label="Toggle Menu"
-                >
-                    {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleLogout}
+                        className="p-2 text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
+                        title="Cerrar sesión"
+                    >
+                        <LogOut size={20} />
+                    </button>
+                    <button
+                        onClick={toggleSidebar}
+                        className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        aria-label="Toggle Menu"
+                    >
+                        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+                    </button>
+                </div>
             </header>
 
             {/* Mobile Sidebar Overlay */}
@@ -80,6 +154,8 @@ function App() {
                         setActiveView(view)
                         setIsSidebarOpen(false)
                     }}
+                    onLogout={handleLogout}
+                    userEmail={user?.email}
                 />
             </aside>
 
