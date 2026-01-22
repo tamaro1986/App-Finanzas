@@ -1,21 +1,28 @@
+// ============================================================================
+// IMPORTS: React, iconos, animaciones y servicios de mercado
+// ============================================================================
 import React, { useState, useEffect, useMemo } from 'react'
 import { Plus, TrendingUp, TrendingDown, RefreshCw, Search, Settings, Trash2, Calendar, DollarSign, Target, Award, AlertCircle, Check, X, ExternalLink } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
 import { fetchAssetPrice, batchUpdatePrices, calculateROI, calculatePL, getDataFreshness } from '../services/marketData'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
+// ============================================================================
+// COMPONENTE: InvestmentPortfolio
+// PROPÓSITO: Gestionar portafolio de inversiones con precios en tiempo real
+// CONECTADO A: Supabase tabla 'investments'
+// ============================================================================
 const InvestmentPortfolio = () => {
-    const [investments, setInvestments] = useState(() => {
-        const saved = localStorage.getItem('finanzas_investments')
-        return saved ? JSON.parse(saved) : []
-    })
+    // Estado para inversiones - se carga desde Supabase
+    const [investments, setInvestments] = useState([])
 
-    const [brokers, setBrokers] = useState(() => {
-        const saved = localStorage.getItem('finanzas_brokers')
-        return saved ? JSON.parse(saved) : ['GBM', 'Bitso', 'Interactive Brokers', 'Binance']
-    })
+    // Estado para brokers - se carga desde Supabase
+    const [brokers, setBrokers] = useState(['GBM', 'Bitso', 'Interactive Brokers', 'Binance'])
 
+    // Estado para API keys - se guarda en localStorage (sensible)
     const [apiKeys, setApiKeys] = useState(() => {
         const saved = localStorage.getItem('finanzas_api_keys')
         return saved ? JSON.parse(saved) : { finnhub: '', alphaVantage: '' }
@@ -39,15 +46,30 @@ const InvestmentPortfolio = () => {
         buyDate: format(new Date(), 'yyyy-MM-dd')
     })
 
-    // Persist investments
+    // ============================================================================
+    // EFFECT: Cargar inversiones desde Supabase al montar componente
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_investments', JSON.stringify(investments))
+        const loadInvestments = async () => {
+            // Cargar inversiones desde Supabase
+            const data = await initializeData('investments', 'finanzas_investments')
+            setInvestments(data)
+        }
+        loadInvestments()
+    }, [])
+
+    // ============================================================================
+    // EFFECT: Sincronizar inversiones con localStorage (fallback)
+    // ============================================================================
+    useEffect(() => {
+        if (investments.length > 0) {
+            localStorage.setItem('finanzas_investments', JSON.stringify(investments))
+        }
     }, [investments])
 
-    useEffect(() => {
-        localStorage.setItem('finanzas_brokers', JSON.stringify(brokers))
-    }, [brokers])
-
+    // ============================================================================
+    // EFFECT: Guardar API keys en localStorage (datos sensibles, solo local)
+    // ============================================================================
     useEffect(() => {
         localStorage.setItem('finanzas_api_keys', JSON.stringify(apiKeys))
     }, [apiKeys])
@@ -64,19 +86,25 @@ const InvestmentPortfolio = () => {
         }
     }, [])
 
+    // ============================================================================
+    // FUNCIÓN: handleAddInvestment
+    // PROPÓSITO: Agregar nueva inversión y obtener precio actual del mercado
+    // SINCRONIZA: Con Supabase después de obtener el precio
+    // ============================================================================
     const handleAddInvestment = async (e) => {
         e.preventDefault()
 
+        // Crear objeto de inversión con datos del formulario
         const investment = {
-            id: crypto.randomUUID(),
+            id: crypto.randomUUID(), // ID único
             ...newInvestment,
             quantity: parseFloat(newInvestment.quantity),
             buyPrice: parseFloat(newInvestment.buyPrice),
-            currentPrice: parseFloat(newInvestment.buyPrice),
-            lastUpdate: Date.now()
+            currentPrice: parseFloat(newInvestment.buyPrice), // Inicialmente = precio de compra
+            lastUpdate: Date.now() // Timestamp de última actualización
         }
 
-        // Try to fetch current price immediately
+        // Intentar obtener precio actual del mercado inmediatamente
         try {
             const price = await fetchAssetPrice(investment, apiKeys)
             if (price) {
@@ -84,10 +112,17 @@ const InvestmentPortfolio = () => {
                 investment.lastUpdate = Date.now()
             }
         } catch (error) {
-            console.warn('Could not fetch initial price:', error)
+            console.warn('No se pudo obtener precio inicial:', error)
         }
 
-        setInvestments([investment, ...investments])
+        // Agregar inversión al estado
+        const updatedInvestments = [investment, ...investments]
+        setInvestments(updatedInvestments)
+
+        // Sincronizar con Supabase
+        await saveToSupabase('investments', 'finanzas_investments', investment, updatedInvestments)
+
+        // Cerrar modal y resetear formulario
         setIsModalOpen(false)
         setNewInvestment({
             broker: '',
@@ -101,19 +136,25 @@ const InvestmentPortfolio = () => {
         })
     }
 
+    // ============================================================================
+    // FUNCIÓN: handleUpdateAllPrices
+    // PROPÓSITO: Actualizar precios de todas las inversiones desde APIs de mercado
+    // SINCRONIZA: Inversiones actualizadas con Supabase
+    // ============================================================================
     const handleUpdateAllPrices = async () => {
         if (investments.length === 0) return
 
         setIsUpdating(true)
         setUpdateProgress(0)
 
+        // Actualizar precios en lote usando el servicio de mercado
         const results = await batchUpdatePrices(
             investments,
             apiKeys,
             (progress) => setUpdateProgress(progress * 100)
         )
 
-        // Update investments with new prices
+        // Actualizar inversiones con los nuevos precios obtenidos
         const updatedInvestments = investments.map(inv => {
             const result = results.find(r => r.id === inv.id)
             if (result && result.success && result.price) {
@@ -126,14 +167,33 @@ const InvestmentPortfolio = () => {
             return inv
         })
 
+        // Actualizar estado
         setInvestments(updatedInvestments)
+
+        // Sincronizar todas las inversiones actualizadas con Supabase
+        for (const inv of updatedInvestments) {
+            await saveToSupabase('investments', 'finanzas_investments', inv, updatedInvestments)
+        }
+
         setIsUpdating(false)
         setUpdateProgress(0)
     }
 
-    const deleteInvestment = (id) => {
+    // ============================================================================
+    // FUNCIÓN: deleteInvestment
+    // PROPÓSITO: Eliminar una inversión del portafolio
+    // SINCRONIZA: Eliminación con Supabase
+    // ============================================================================
+    const deleteInvestment = async (id) => {
         if (confirm('¿Eliminar esta inversión?')) {
-            setInvestments(investments.filter(inv => inv.id !== id))
+            // Filtrar inversión a eliminar
+            const updatedInvestments = investments.filter(inv => inv.id !== id)
+
+            // Actualizar estado
+            setInvestments(updatedInvestments)
+
+            // Sincronizar eliminación con Supabase
+            await deleteFromSupabase('investments', 'finanzas_investments', id, updatedInvestments)
         }
     }
 

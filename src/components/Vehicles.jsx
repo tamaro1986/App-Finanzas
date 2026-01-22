@@ -1,12 +1,20 @@
+// ============================================================================
+// IMPORTS: React, iconos y utilidades de fecha
+// ============================================================================
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Car, Settings, Calendar, Gauge, AlertTriangle, CheckCircle2, ChevronRight, X, DollarSign } from 'lucide-react'
 import { format } from 'date-fns'
+// Importar funciones de sincronización con Supabase
+import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
+// ============================================================================
+// COMPONENTE: Vehicles
+// PROPÓSITO: Gestionar vehículos y control de mantenimientos
+// CONECTADO A: Supabase tabla 'vehicles'
+// ============================================================================
 const Vehicles = () => {
-    const [vehicles, setVehicles] = useState(() => {
-        const saved = localStorage.getItem('finanzas_vehicles')
-        return saved ? JSON.parse(saved) : []
-    })
+    // Estado para vehículos - se carga desde Supabase
+    const [vehicles, setVehicles] = useState([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newVehicle, setNewVehicle] = useState({
         name: '',
@@ -19,12 +27,34 @@ const Vehicles = () => {
         ]
     })
 
+    // ============================================================================
+    // EFFECT: Cargar vehículos desde Supabase al montar componente
+    // ============================================================================
     useEffect(() => {
-        localStorage.setItem('finanzas_vehicles', JSON.stringify(vehicles))
+        const loadVehicles = async () => {
+            const data = await initializeData('vehicles', 'finanzas_vehicles')
+            setVehicles(data)
+        }
+        loadVehicles()
+    }, [])
+
+    // ============================================================================
+    // EFFECT: Sincronizar con localStorage (fallback)
+    // ============================================================================
+    useEffect(() => {
+        if (vehicles.length > 0) {
+            localStorage.setItem('finanzas_vehicles', JSON.stringify(vehicles))
+        }
     }, [vehicles])
 
-    const handleAddVehicle = (e) => {
+    // ============================================================================
+    // FUNCIÓN: handleAddVehicle
+    // PROPÓSITO: Agregar nuevo vehículo con sus parámetros de mantenimiento
+    // SINCRONIZA: Con Supabase
+    // ============================================================================
+    const handleAddVehicle = async (e) => {
         e.preventDefault()
+        // Crear objeto de vehículo con datos procesados
         const vehicle = {
             id: crypto.randomUUID(),
             ...newVehicle,
@@ -36,7 +66,15 @@ const Vehicles = () => {
                 estimatedCost: parseFloat(item.estimatedCost) || 0
             }))
         }
-        setVehicles([...vehicles, vehicle])
+
+        // Agregar al estado
+        const updatedVehicles = [...vehicles, vehicle]
+        setVehicles(updatedVehicles)
+
+        // Sincronizar con Supabase
+        await saveToSupabase('vehicles', 'finanzas_vehicles', vehicle, updatedVehicles)
+
+        // Cerrar modal y resetear formulario
         setIsModalOpen(false)
         setNewVehicle({
             name: '', plate: '', type: 'Carro', currentMileage: '',
@@ -47,18 +85,42 @@ const Vehicles = () => {
         })
     }
 
-    const deleteVehicle = (id) => {
+    // ============================================================================
+    // FUNCIÓN: deleteVehicle
+    // PROPÓSITO: Eliminar vehículo
+    // SINCRONIZA: Con Supabase
+    // ============================================================================
+    const deleteVehicle = async (id) => {
         if (window.confirm('¿Eliminar este vehículo?')) {
-            setVehicles(vehicles.filter(v => v.id !== id))
+            const updatedVehicles = vehicles.filter(v => v.id !== id)
+            setVehicles(updatedVehicles)
+            await deleteFromSupabase('vehicles', 'finanzas_vehicles', id, updatedVehicles)
         }
     }
 
-    const updateMileage = (vehicleId, newKm) => {
-        setVehicles(vehicles.map(v => v.id === vehicleId ? { ...v, currentMileage: parseInt(newKm) || 0 } : v))
+    // ============================================================================
+    // FUNCIÓN: updateMileage
+    // PROPÓSITO: Actualizar kilometraje actual del vehículo
+    // SINCRONIZA: Con Supabase
+    // ============================================================================
+    const updateMileage = async (vehicleId, newKm) => {
+        const updatedVehicles = vehicles.map(v => v.id === vehicleId ? { ...v, currentMileage: parseInt(newKm) || 0 } : v)
+        setVehicles(updatedVehicles)
+
+        // Sincronizar vehículo actualizado
+        const updatedVehicle = updatedVehicles.find(v => v.id === vehicleId)
+        if (updatedVehicle) {
+            await saveToSupabase('vehicles', 'finanzas_vehicles', updatedVehicle, updatedVehicles)
+        }
     }
 
-    const resetMaintenance = (vehicleId, itemId) => {
-        setVehicles(vehicles.map(v => {
+    // ============================================================================
+    // FUNCIÓN: resetMaintenance
+    // PROPÓSITO: Marcar mantenimiento como realizado (resetear contador)
+    // SINCRONIZA: Con Supabase
+    // ============================================================================
+    const resetMaintenance = async (vehicleId, itemId) => {
+        const updatedVehicles = vehicles.map(v => {
             if (v.id === vehicleId) {
                 return {
                     ...v,
@@ -68,7 +130,15 @@ const Vehicles = () => {
                 }
             }
             return v
-        }))
+        })
+
+        setVehicles(updatedVehicles)
+
+        // Sincronizar vehículo actualizado
+        const updatedVehicle = updatedVehicles.find(v => v.id === vehicleId)
+        if (updatedVehicle) {
+            await saveToSupabase('vehicles', 'finanzas_vehicles', updatedVehicle, updatedVehicles)
+        }
     }
 
     const getStatus = (current, last, interval) => {
