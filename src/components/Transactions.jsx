@@ -2,10 +2,11 @@
 // IMPORTS: React, iconos, utilidades y funciones de sincronización
 // ============================================================================
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X } from 'lucide-react'
-import { format } from 'date-fns'
+import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X, FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle } from 'lucide-react'
+import { format, parse, isValid } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { DEFAULT_CATEGORIES } from '../constants/categories'
+import * as XLSX from 'xlsx' // Importar librería para Excel
 // Importar funciones de sincronización con Supabase
 import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 
@@ -20,8 +21,14 @@ const Transactions = () => {
     // Estado para almacenar cuentas - se carga desde Supabase
     const [accounts, setAccounts] = useState([])
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [filterType, setFilterType] = useState('all')
+
+    // Estados para importación de Excel
+    const [importErrors, setImportErrors] = useState([])
+    const [importPreview, setImportPreview] = useState([])
+    const [importSuccessCount, setImportSuccessCount] = useState(0)
 
     const [newTx, setNewTx] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
@@ -129,36 +136,7 @@ const Transactions = () => {
             amount: parseFloat(newTx.amount)
         }
 
-        // Agregar transacción al inicio del array
-        const updatedTransactions = [transaction, ...transactions]
-        setTransactions(updatedTransactions)
-        // Sincronizar transacción con Supabase
-        await saveToSupabase('transactions', 'finanzas_transactions', transaction, updatedTransactions)
-
-        // ========================================================================
-        // Actualizar balance de la cuenta afectada
-        // ========================================================================
-        const updatedAccounts = accounts.map(acc => {
-            if (acc.id === newTx.accountId) {
-                let newBalance = acc.balance
-                // Para préstamos: ingreso reduce deuda, gasto aumenta deuda
-                if (acc.type === 'Préstamo') {
-                    newBalance = newTx.type === 'income' ? acc.balance - transaction.amount : acc.balance + transaction.amount
-                } else {
-                    // Para cuentas normales: ingreso aumenta, gasto disminuye
-                    newBalance = newTx.type === 'income' ? acc.balance + transaction.amount : acc.balance - transaction.amount
-                }
-                return { ...acc, balance: newBalance }
-            }
-            return acc
-        })
-        setAccounts(updatedAccounts)
-
-        // Sincronizar cuenta actualizada con Supabase
-        const updatedAccount = updatedAccounts.find(acc => acc.id === newTx.accountId)
-        if (updatedAccount) {
-            await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
-        }
+        await processTransaction(transaction)
 
         // Cerrar modal y resetear formulario
         setIsModalOpen(false)
@@ -171,6 +149,38 @@ const Transactions = () => {
             note: '',
             attachment: null
         })
+    }
+
+    // Función auxiliar para procesar transacción y actualizar balances
+    const processTransaction = async (transaction) => {
+        // Agregar transacción al inicio del array
+        const updatedTransactions = [transaction, ...transactions]
+        setTransactions(updatedTransactions)
+        // Sincronizar transacción con Supabase
+        await saveToSupabase('transactions', 'finanzas_transactions', transaction, updatedTransactions)
+
+        // Actualizar balance de la cuenta afectada
+        const updatedAccounts = accounts.map(acc => {
+            if (acc.id === transaction.accountId) {
+                let newBalance = acc.balance
+                // Para préstamos: ingreso reduce deuda, gasto aumenta deuda
+                if (acc.type === 'Préstamo') {
+                    newBalance = transaction.type === 'income' ? acc.balance - transaction.amount : acc.balance + transaction.amount
+                } else {
+                    // Para cuentas normales: ingreso aumenta, gasto disminuye
+                    newBalance = transaction.type === 'income' ? acc.balance + transaction.amount : acc.balance - transaction.amount
+                }
+                return { ...acc, balance: newBalance }
+            }
+            return acc
+        })
+        setAccounts(updatedAccounts)
+
+        // Sincronizar cuenta actualizada con Supabase
+        const updatedAccount = updatedAccounts.find(acc => acc.id === transaction.accountId)
+        if (updatedAccount) {
+            await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+        }
     }
 
     // ============================================================================
@@ -215,6 +225,132 @@ const Transactions = () => {
         }
     }
 
+    // ============================================================================
+    // FUNCIONES PARA EXCEL: Descarga de plantilla y Carga de datos
+    // ============================================================================
+    const downloadTemplate = () => {
+        const headers = ['Fecha (AAAA-MM-DD)', 'Tipo (ingreso/gasto)', 'Monto', 'Categoría', 'Nota', 'Cuenta']
+        const data = [
+            headers,
+            ['2025-01-20', 'gasto', 150.50, 'Comida', 'Almuerzo trabajo', 'Efectivo'],
+            ['2025-01-21', 'ingreso', 5000, 'Salario', 'Nómina quincenal', 'Banco']
+        ]
+
+        const ws = XLSX.utils.aoa_to_sheet(data)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, "Plantilla")
+        XLSX.writeFile(wb, "Plantilla_Movimientos_NegociosGarcia.xlsx")
+    }
+
+    const handleExcelUpload = (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+
+        const reader = new FileReader()
+        reader.onload = (evt) => {
+            const bstr = evt.target.result
+            const wb = XLSX.read(bstr, { type: 'binary' })
+            const wsname = wb.SheetNames[0]
+            const ws = wb.Sheets[wsname]
+            const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) // Leer como array de arrays
+
+            validateAndPreviewData(data)
+        }
+        reader.readAsBinaryString(file)
+    }
+
+    const validateAndPreviewData = (data) => {
+        const errors = []
+        const validRows = []
+        // Ignorar header (fila 0)
+        const rows = data.slice(1)
+
+        rows.forEach((row, index) => {
+            const rowNum = index + 2 // +2 porque slice quitó header y excel es 1-indexed
+
+            // Estructura esperada: [Fecha, Tipo, Monto, Categoría, Nota, Cuenta]
+            const [dateRaw, typeRaw, amountRaw, categoryRaw, noteRaw, accountRaw] = row
+
+            // Si la fila está vacía, saltar
+            if (!dateRaw && !amountRaw) return
+
+            // 1. Validar Fecha
+            let date = dateRaw
+            if (!date) errors.push(`Fila ${rowNum}: Falta la fecha`)
+            // Excel a veces devuelve fecha como número serial
+            if (typeof date === 'number') {
+                const dateObj = new Date(Math.round((date - 25569) * 86400 * 1000))
+                date = format(dateObj, 'yyyy-MM-dd')
+            }
+
+            // 2. Validar Tipo
+            const type = typeRaw?.toString().toLowerCase()
+            if (type !== 'ingreso' && type !== 'gasto') errors.push(`Fila ${rowNum}: Tipo inválido (debe ser 'ingreso' o 'gasto')`)
+
+            // 3. Validar Monto
+            const amount = parseFloat(amountRaw)
+            if (isNaN(amount) || amount <= 0) errors.push(`Fila ${rowNum}: Monto inválido`)
+
+            // 4. Validar Categoría (Buscamos ID)
+            const allCats = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
+            let categoryId = ''
+            if (categoryRaw) {
+                const catFound = allCats.find(c => c.name.toLowerCase() === categoryRaw.toString().toLowerCase())
+                categoryId = catFound ? catFound.id : 'others' // Default a 'Otros'
+            } else {
+                errors.push(`Fila ${rowNum}: Falta categoría`)
+            }
+
+            // 5. Validar Cuenta (Buscamos ID)
+            let accountId = ''
+            if (accountRaw) {
+                const accFound = accounts.find(a => a.name.toLowerCase() === accountRaw.toString().toLowerCase())
+                if (accFound) {
+                    accountId = accFound.id
+                } else {
+                    errors.push(`Fila ${rowNum}: Cuenta '${accountRaw}' no existe. Créala primero o usa una existente.`)
+                }
+            } else {
+                // Si no se especifica cuenta y solo hay una, usar esa. Si hay varias, error.
+                if (accounts.length === 1) accountId = accounts[0].id
+                else errors.push(`Fila ${rowNum}: Falta especificar la cuenta`)
+            }
+
+            if (errors.length === 0 || errors[errors.length - 1].split(':')[0] !== `Fila ${rowNum}`) {
+                // Si no hubo errores nuevos para esta fila
+                validRows.push({
+                    id: crypto.randomUUID(),
+                    date,
+                    type: type === 'ingreso' ? 'income' : 'expense',
+                    amount,
+                    categoryId,
+                    accountId,
+                    note: noteRaw || '',
+                    attachment: null
+                })
+            }
+        })
+
+        setImportErrors(errors)
+        setImportPreview(validRows)
+        setImportSuccessCount(validRows.length)
+    }
+
+    const confirmImport = async () => {
+        if (importPreview.length === 0) return
+
+        let importedCount = 0
+        for (const tx of importPreview) {
+            await processTransaction(tx)
+            importedCount++
+        }
+
+        alert(`Se importaron ${importedCount} movimientos correctamente.`)
+        setIsImportModalOpen(false)
+        setImportPreview([])
+        setImportErrors([])
+    }
+
     const filteredTransactions = transactions.filter(t => {
         const matchesSearch = t.note.toLowerCase().includes(searchQuery.toLowerCase())
         const matchesType = filterType === 'all' || t.type === filterType
@@ -227,16 +363,25 @@ const Transactions = () => {
         <div className="space-y-8 animate-in fade-in duration-500">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Movimientos</h2>
+                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>Movimientos</h2>
                     <p className="text-slate-500 font-medium">Registra y revisa todos tus ingresos y gastos.</p>
                 </div>
-                <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="btn-primary"
-                >
-                    <Plus size={18} />
-                    <span>Nuevo Movimiento</span>
-                </button>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => setIsImportModalOpen(true)}
+                        className="btn-secondary text-sm"
+                    >
+                        <FileSpreadsheet size={18} />
+                        <span>Importar Excel</span>
+                    </button>
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="btn-primary"
+                    >
+                        <Plus size={18} />
+                        <span>Nuevo Movimiento</span>
+                    </button>
+                </div>
             </header>
 
             {/* Filters */}
@@ -292,7 +437,7 @@ const Transactions = () => {
 
                                     return (
                                         <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
-                                            <td className="px-6 py-4 text-sm text-slate-600 font-medium">
+                                            <td className="px-6 py-4 text-sm text-slate-600 font-medium whitespace-nowrap">
                                                 {t.date}
                                             </td>
                                             <td className="px-6 py-4">
@@ -302,7 +447,7 @@ const Transactions = () => {
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold uppercase transition-colors group-hover:bg-white border border-transparent group-hover:border-slate-200">
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold uppercase transition-colors group-hover:bg-white border border-transparent group-hover:border-slate-200 whitespace-nowrap">
                                                     {category?.icon} {category?.name || 'Sin cat.'}
                                                 </span>
                                             </td>
@@ -322,7 +467,7 @@ const Transactions = () => {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className={`px-6 py-4 text-right font-bold ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            <td className={`px-6 py-4 text-right font-bold whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                 {t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-6 py-4 text-right">
@@ -342,13 +487,163 @@ const Transactions = () => {
                 </div>
             </div>
 
+            {/* Import Excel Modal */}
+            {isImportModalOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsImportModalOpen(false)} />
+                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>Importar Movimientos</h3>
+                                <p className="text-sm text-slate-500 mt-1">Sube tus datos usando nuestra plantilla.</p>
+                            </div>
+                            <button onClick={() => setIsImportModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div className="p-8 overflow-y-auto flex-1">
+                            {!importPreview.length && !importErrors.length ? (
+                                <div className="space-y-6">
+                                    {/* Paso 1: Descargar Plantilla */}
+                                    <div className="p-6 bg-blue-50/50 border border-blue-100 rounded-xl flex items-start gap-4">
+                                        <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
+                                            <Download size={24} />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-blue-900 mb-1">Paso 1: Descarga la plantilla</h4>
+                                            <p className="text-sm text-blue-700 mb-4">Usa este archivo para asegurar que el formato sea correcto. No cambies los encabezados.</p>
+                                            <button onClick={downloadTemplate} className="btn-secondary text-xs">
+                                                Descargar Plantilla Excel
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Paso 2: Subir Archivo */}
+                                    <div className="p-6 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl text-center hover:bg-slate-100/50 transition-colors">
+                                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+                                            <Upload size={24} />
+                                        </div>
+                                        <h4 className="font-bold text-slate-700 mb-1">Paso 2: Sube tu archivo</h4>
+                                        <p className="text-sm text-slate-500 mb-4">Arrastra tu archivo aquí o haz clic para buscarlo</p>
+                                        <input
+                                            type="file"
+                                            accept=".xlsx, .xls"
+                                            onChange={handleExcelUpload}
+                                            className="hidden"
+                                            id="file-upload"
+                                        />
+                                        <label htmlFor="file-upload" className="btn-primary inline-flex cursor-pointer">
+                                            Seleccionar Archivo
+                                        </label>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-6">
+                                    {/* Resumen de validación */}
+                                    <div className="flex gap-4">
+                                        <div className="flex-1 p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <CheckCircle className="text-emerald-600" size={20} />
+                                                <span className="font-bold text-emerald-900">Válidos</span>
+                                            </div>
+                                            <p className="text-2xl font-bold text-emerald-700">{importSuccessCount}</p>
+                                            <p className="text-xs text-emerald-600">listos para importar</p>
+                                        </div>
+                                        <div className="flex-1 p-4 bg-rose-50 border border-rose-100 rounded-xl">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <AlertTriangle className="text-rose-600" size={20} />
+                                                <span className="font-bold text-rose-900">Errores</span>
+                                            </div>
+                                            <p className="text-2xl font-bold text-rose-700">{importErrors.length}</p>
+                                            <p className="text-xs text-rose-600">requieren corrección</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Lista de Errores */}
+                                    {importErrors.length > 0 && (
+                                        <div className="bg-rose-50 border border-rose-100 rounded-xl overflow-hidden">
+                                            <div className="px-4 py-3 bg-rose-100/50 border-b border-rose-100 font-bold text-rose-800 text-sm">
+                                                Detalle de Errores (Corrige y vuelve a subir)
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto p-4 space-y-2">
+                                                {importErrors.map((err, i) => (
+                                                    <div key={i} className="flex items-start gap-2 text-sm text-rose-700">
+                                                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                                                        <span>{err}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Lista Previa (Primeros 5) */}
+                                    {importPreview.length > 0 && (
+                                        <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                            <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 text-sm">
+                                                Vista Previa ({importPreview.length} registros)
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto">
+                                                <table className="w-full text-left text-sm">
+                                                    <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
+                                                        <tr>
+                                                            <th className="px-4 py-2">Fecha</th>
+                                                            <th className="px-4 py-2">Tipo</th>
+                                                            <th className="px-4 py-2 text-right">Monto</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100">
+                                                        {importPreview.slice(0, 5).map((row, i) => (
+                                                            <tr key={i}>
+                                                                <td className="px-4 py-2">{row.date}</td>
+                                                                <td className="px-4 py-2">{row.type}</td>
+                                                                <td className="px-4 py-2 text-right">${row.amount}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                                {importPreview.length > 5 && (
+                                                    <div className="px-4 py-2 text-center text-xs text-slate-400 bg-slate-50">
+                                                        ... y {importPreview.length - 5} más
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-4">
+                                        <button
+                                            onClick={() => {
+                                                setImportPreview([])
+                                                setImportErrors([])
+                                                setImportSuccessCount(0)
+                                            }}
+                                            className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all border border-slate-200"
+                                        >
+                                            Cancelar / Subir Otro
+                                        </button>
+                                        <button
+                                            onClick={confirmImport}
+                                            disabled={importPreview.length === 0 || importErrors.length > 0}
+                                            className="flex-1 btn-primary !py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Confirmar Importación
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* New Transaction Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
                     <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
                         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                            <h3 className="text-xl font-bold text-slate-900">Nuevo Movimiento</h3>
+                            <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>Nuevo Movimiento</h3>
                         </div>
 
                         <form onSubmit={handleAddTransaction} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">

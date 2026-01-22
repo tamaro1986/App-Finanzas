@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NegociosGarcia</string>
+    <string name="title_activity_main">NegociosGarcia</string>
+    <string name="package_name">com.negociosgarcia.app</string>
+    <string name="custom_url_scheme">com.negociosgarcia.app</string>
+</resources>
