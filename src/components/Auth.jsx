@@ -103,19 +103,20 @@ const Auth = ({ onAuthSuccess }) => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 flex items-center justify-center p-4">
             <div className="w-full max-w-md">
-                {/* Logo/Header */}
+                {/* Logo/Header - Marca NegociosGarcia */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-600 to-violet-600 rounded-3xl shadow-2xl shadow-blue-200 mb-4">
-                        <span className="text-4xl font-black text-white">₱</span>
+                    <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-[#1e3a5f] to-[#0d8b5f] rounded-3xl shadow-2xl shadow-emerald-200 mb-4 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-tr from-[#d4af37]/20 to-transparent"></div>
+                        <span className="text-5xl font-bold text-white relative z-10" style={{ fontFamily: 'Georgia, serif' }}>NG</span>
                     </div>
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">FinanzasPro</h1>
-                    <p className="text-slate-500 font-medium">Control total de tus finanzas</p>
+                    <h1 className="text-4xl font-bold text-[#1e3a5f] tracking-tight mb-2" style={{ fontFamily: 'Georgia, serif' }}>NegociosGarcia</h1>
+                    <p className="text-[#d4af37] font-semibold italic" style={{ fontFamily: 'Georgia, serif' }}>Crecimiento y Confianza</p>
                 </div>
 
                 {/* Card de autenticación */}
-                <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200/50 p-8 border border-slate-100">
+                <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200/50 p-8 border-2 border-[#0d8b5f]/10">
                     {/* Tabs Login/Signup */}
                     <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl mb-8">
                         <button
@@ -125,8 +126,8 @@ const Auth = ({ onAuthSuccess }) => {
                                 setMessage('')
                             }}
                             className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${isLogin
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-white text-[#1e3a5f] shadow-sm'
+                                : 'text-slate-500 hover:text-slate-700'
                                 }`}
                         >
                             <LogIn size={18} className="inline mr-2" />
@@ -139,8 +140,8 @@ const Auth = ({ onAuthSuccess }) => {
                                 setMessage('')
                             }}
                             className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${!isLogin
-                                    ? 'bg-white text-violet-600 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                ? 'bg-white text-[#0d8b5f] shadow-sm'
+                                : 'text-slate-500 hover:text-slate-700'
                                 }`}
                         >
                             <UserPlus size={18} className="inline mr-2" />
@@ -176,7 +177,7 @@ const Auth = ({ onAuthSuccess }) => {
                                     type="email"
                                     required
                                     placeholder="tu@email.com"
-                                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-900 focus:border-blue-500 focus:bg-white transition-all outline-none"
+                                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-900 focus:border-[#0d8b5f] focus:bg-white transition-all outline-none"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     disabled={loading}
@@ -195,7 +196,7 @@ const Auth = ({ onAuthSuccess }) => {
                                     type={showPassword ? 'text' : 'password'}
                                     required
                                     placeholder="••••••••"
-                                    className="w-full pl-12 pr-12 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-900 focus:border-blue-500 focus:bg-white transition-all outline-none"
+                                    className="w-full pl-12 pr-12 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-900 focus:border-[#0d8b5f] focus:bg-white transition-all outline-none"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     disabled={loading}
@@ -222,7 +223,7 @@ const Auth = ({ onAuthSuccess }) => {
                                         type={showPassword ? 'text' : 'password'}
                                         required
                                         placeholder="••••••••"
-                                        className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-900 focus:border-violet-500 focus:bg-white transition-all outline-none"
+                                        className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-900 focus:border-[#0d8b5f] focus:bg-white transition-all outline-none"
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         disabled={loading}
@@ -236,8 +237,8 @@ const Auth = ({ onAuthSuccess }) => {
                             type="submit"
                             disabled={loading}
                             className={`w-full py-4 rounded-2xl font-black text-white text-lg shadow-xl transition-all ${isLogin
-                                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-blue-200'
-                                    : 'bg-gradient-to-r from-violet-600 to-violet-700 hover:from-violet-700 hover:to-violet-800 shadow-violet-200'
+                                ? 'bg-gradient-to-r from-[#1e3a5f] to-[#0d8b5f] hover:from-[#0d8b5f] hover:to-[#1e3a5f] shadow-emerald-200'
+                                : 'bg-gradient-to-r from-[#0d8b5f] to-[#d4af37] hover:from-[#d4af37] hover:to-[#0d8b5f] shadow-emerald-200'
                                 } disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2`}
                         >
                             {loading ? (
