@@ -38,6 +38,7 @@ function App() {
     const [tccEntries, setTccEntries] = useState([])
     const [logEntries, setLogEntries] = useState([])
     const [medicationList, setMedicationList] = useState(["Sertralina", "Quetiapina", "Magnesium", "Ashwaganda", "Ansiovit", "Somit"])
+    const [investments, setInvestments] = useState([])
 
     // ============================================================================
     // EFFECT: Verificar sesión y cargar datos al iniciar
@@ -71,6 +72,7 @@ function App() {
                 setPatients([])
                 setTccEntries([])
                 setLogEntries([])
+                setInvestments([])
             }
         })
 
@@ -81,7 +83,7 @@ function App() {
         try {
             const { initializeData } = await import('./lib/supabaseSync')
 
-            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData] = await Promise.all([
+            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData] = await Promise.all([
                 initializeData('transactions', 'finanzas_transactions'),
                 initializeData('accounts', 'finanzas_accounts'),
                 initializeData('budgets', 'finanzas_budgets'),
@@ -90,7 +92,8 @@ function App() {
                 initializeData('patients', 'finanzas_patients'),
                 initializeData('journal_tcc', 'finanzas_journal_cbt'),
                 initializeData('journal_health_log', 'finanzas_journal_health_log'),
-                initializeData('medications', 'finanzas_journal_med_list')
+                initializeData('medications', 'finanzas_journal_med_list'),
+                initializeData('investments', 'finanzas_investments')
             ])
 
             setTransactions(txData || [])
@@ -101,6 +104,7 @@ function App() {
             setPatients(patientData || [])
             setTccEntries(tccData || [])
             setLogEntries(logData || [])
+            setInvestments(invData || [])
             if (medListData && medListData.length > 0) setMedicationList(medListData)
         } catch (error) {
             console.error('Error loading global data:', error)
@@ -169,9 +173,9 @@ function App() {
                     />
                 )
             case 'debts':
-                return <DebtModule />
+                return <DebtModule accounts={accounts} setAccounts={setAccounts} transactions={transactions} />
             case 'investments':
-                return <InvestmentPortfolio />
+                return <InvestmentPortfolio investments={investments} setInvestments={setInvestments} />
             case 'settings':
                 return <Settings />
             default:

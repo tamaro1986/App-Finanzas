@@ -3,15 +3,7 @@ import { Landmark, Calendar, DollarSign, CheckCircle2, Circle, ArrowLeft, Trendi
 import { format, addMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 
-const DebtModule = () => {
-    const [accounts, setAccounts] = useState(() => {
-        const saved = localStorage.getItem('finanzas_accounts')
-        return saved ? JSON.parse(saved) : []
-    })
-    const [transactions, setTransactions] = useState(() => {
-        const saved = localStorage.getItem('finanzas_transactions')
-        return saved ? JSON.parse(saved) : []
-    })
+const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
     const [selectedDebtId, setSelectedDebtId] = useState(null)
     const [isExtraPaymentModalOpen, setIsExtraPaymentModalOpen] = useState(false)
     const [extraPayment, setExtraPayment] = useState({
@@ -19,15 +11,6 @@ const DebtModule = () => {
         date: format(new Date(), 'yyyy-MM-dd'),
         note: 'Pago realizado'
     })
-
-    useEffect(() => {
-        const handleStorageChange = () => {
-            setAccounts(JSON.parse(localStorage.getItem('finanzas_accounts') || '[]'))
-            setTransactions(JSON.parse(localStorage.getItem('finanzas_transactions') || '[]'))
-        }
-        window.addEventListener('storage', handleStorageChange)
-        return () => window.removeEventListener('storage', handleStorageChange)
-    }, [])
 
     const debts = accounts.filter(acc => acc.type === 'Préstamo' || acc.loanDetails)
 

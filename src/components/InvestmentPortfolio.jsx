@@ -15,11 +15,8 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // PROPÓSITO: Gestionar portafolio de inversiones con precios en tiempo real
 // CONECTADO A: Supabase tabla 'investments'
 // ============================================================================
-const InvestmentPortfolio = () => {
-    // Estado para inversiones - se carga desde Supabase
-    const [investments, setInvestments] = useState([])
-
-    // Estado para brokers - se carga desde Supabase
+const InvestmentPortfolio = ({ investments, setInvestments }) => {
+    // Estado para brokers - se carga desde Supabase (o estático si prefieres)
     const [brokers, setBrokers] = useState(['GBM', 'Bitso', 'Interactive Brokers', 'Binance'])
 
     // Estado para API keys - se guarda en localStorage (sensible)
@@ -45,27 +42,6 @@ const InvestmentPortfolio = () => {
         buyCurrency: 'USD',
         buyDate: format(new Date(), 'yyyy-MM-dd')
     })
-
-    // ============================================================================
-    // EFFECT: Cargar inversiones desde Supabase al montar componente
-    // ============================================================================
-    useEffect(() => {
-        const loadInvestments = async () => {
-            // Cargar inversiones desde Supabase
-            const data = await initializeData('investments', 'finanzas_investments')
-            setInvestments(data)
-        }
-        loadInvestments()
-    }, [])
-
-    // ============================================================================
-    // EFFECT: Sincronizar inversiones con localStorage (fallback)
-    // ============================================================================
-    useEffect(() => {
-        if (investments.length > 0) {
-            localStorage.setItem('finanzas_investments', JSON.stringify(investments))
-        }
-    }, [investments])
 
     // ============================================================================
     // EFFECT: Guardar API keys en localStorage (datos sensibles, solo local)
