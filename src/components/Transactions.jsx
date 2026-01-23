@@ -15,11 +15,7 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // PROPÓSITO: Gestionar transacciones (ingresos y gastos)
 // CONECTADO A: Supabase tablas 'transactions' y 'accounts'
 // ============================================================================
-const Transactions = () => {
-    // Estado para almacenar transacciones - se carga desde Supabase
-    const [transactions, setTransactions] = useState([])
-    // Estado para almacenar cuentas - se carga desde Supabase
-    const [accounts, setAccounts] = useState([])
+const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) => {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isImportModalOpen, setIsImportModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -82,30 +78,6 @@ const Transactions = () => {
             setNewTx({ ...newTx, attachment: compressed });
         }
     };
-
-    // ============================================================================
-    // EFFECT: Cargar datos desde Supabase al montar el componente
-    // ============================================================================
-    useEffect(() => {
-        const loadData = async () => {
-            // Cargar transacciones desde Supabase
-            const txData = await initializeData('transactions', 'finanzas_transactions')
-            setTransactions(txData)
-            // Cargar cuentas desde Supabase
-            const accData = await initializeData('accounts', 'finanzas_accounts')
-            setAccounts(accData)
-        }
-        loadData()
-    }, [])
-
-    // ============================================================================
-    // EFFECT: Sincronizar con localStorage (fallback)
-    // ============================================================================
-    useEffect(() => {
-        if (transactions.length > 0) {
-            localStorage.setItem('finanzas_transactions', JSON.stringify(transactions))
-        }
-    }, [transactions])
 
     // ============================================================================
     // EFFECT: Establecer cuenta por defecto al abrir modal

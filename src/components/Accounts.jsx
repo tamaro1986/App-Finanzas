@@ -11,10 +11,7 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // PROPÓSITO: Gestionar cuentas bancarias, efectivo, tarjetas, etc.
 // CONECTADO A: Supabase tabla 'accounts' + localStorage como fallback
 // ============================================================================
-const Accounts = () => {
-    // Estado para almacenar el array de cuentas
-    // Inicialmente vacío, se cargará desde Supabase en useEffect
-    const [accounts, setAccounts] = useState([])
+const Accounts = ({ accounts, setAccounts }) => {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newAccount, setNewAccount] = useState({
         name: '',
@@ -32,33 +29,6 @@ const Accounts = () => {
             paymentFrequency: 'monthly'
         }
     })
-
-    // ============================================================================
-    // EFFECT: Cargar datos desde Supabase al montar el componente
-    // Se ejecuta solo una vez cuando el componente se monta
-    // ============================================================================
-    useEffect(() => {
-        // Función asíncrona para cargar datos desde Supabase
-        const loadAccounts = async () => {
-            // initializeData intenta cargar desde Supabase, si falla usa localStorage
-            const data = await initializeData('accounts', 'finanzas_accounts')
-            // Actualizar el estado con los datos cargados
-            setAccounts(data)
-        }
-        // Ejecutar la función de carga
-        loadAccounts()
-    }, []) // Array vacío = solo se ejecuta al montar
-
-    // ============================================================================
-    // EFFECT: Sincronizar con localStorage cada vez que cambian las cuentas
-    // Este es un fallback por si Supabase falla
-    // ============================================================================
-    useEffect(() => {
-        // Solo sincronizar si hay cuentas (evitar sobrescribir en carga inicial)
-        if (accounts.length > 0) {
-            localStorage.setItem('finanzas_accounts', JSON.stringify(accounts))
-        }
-    }, [accounts])
 
     // ============================================================================
     // FUNCIÓN: handleAddAccount

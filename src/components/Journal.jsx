@@ -14,17 +14,12 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // PROPÓSITO: Diario de salud mental con TCC y bitácora médica
 // CONECTADO A: Supabase tablas 'journal_tcc', 'journal_health_log', 'medications'
 // ============================================================================
-const Journal = () => {
+const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicationList, setMedicationList }) => {
     const [activeTab, setActiveTab] = useState('tcc')
     const [searchQuery, setSearchQuery] = useState('')
     const [isThinking, setIsThinking] = useState(false)
     const [isModalOpen, setIsModalOpen] = useState(false)
-
-    // Estados - se cargan desde Supabase
-    const [medicationList, setMedicationList] = useState(["Sertralina", "Quetiapina", "Magnesium", "Ashwaganda", "Ansiovit", "Somit"])
     const [newMedName, setNewMedName] = useState('')
-    const [tccEntries, setTccEntries] = useState([])
-    const [logEntries, setLogEntries] = useState([])
 
     // States for New Entries
     const [newTccEntry, setNewTccEntry] = useState({
@@ -42,7 +37,7 @@ const Journal = () => {
         anxietyLevel: 5,
         insomniaLevel: 0,
         medications: {},
-        meditation: { morning: 0, afternoon: 0, night: 0 }, // Changed to numbers (minutes)
+        meditation: { morning: 0, afternoon: 0, night: 0 },
         diary_note: '',
         symptoms: ''
     })
@@ -54,56 +49,6 @@ const Journal = () => {
             initialMeds[m] = false
         })
         setNewLogEntry(prev => ({ ...prev, medications: initialMeds }))
-    }, [medicationList])
-
-    // ============================================================================
-    // EFFECT: Cargar datos desde Supabase
-    // ============================================================================
-    useEffect(() => {
-        const loadData = async () => {
-            const tccData = await initializeData('journal_tcc', 'finanzas_journal_cbt')
-            setTccEntries(tccData)
-            const logData = await initializeData('journal_health_log', 'finanzas_journal_health_log')
-            setLogEntries(logData)
-            const medData = await initializeData('medications', 'finanzas_journal_med_list')
-            if (medData && medData.length > 0) setMedicationList(medData)
-        }
-        loadData()
-    }, [])
-
-    // ============================================================================
-    // EFFECT: Sincronizar con Supabase
-    // ============================================================================
-    useEffect(() => {
-        const sync = async () => {
-            localStorage.setItem('finanzas_journal_cbt', JSON.stringify(tccEntries))
-            if (tccEntries.length > 0) {
-                for (const entry of tccEntries) {
-                    await saveToSupabase('journal_tcc', 'finanzas_journal_cbt', entry, tccEntries)
-                }
-            }
-        }
-        sync()
-    }, [tccEntries])
-
-    useEffect(() => {
-        const sync = async () => {
-            localStorage.setItem('finanzas_journal_health_log', JSON.stringify(logEntries))
-            if (logEntries.length > 0) {
-                for (const entry of logEntries) {
-                    await saveToSupabase('journal_health_log', 'finanzas_journal_health_log', entry, logEntries)
-                }
-            }
-        }
-        sync()
-    }, [logEntries])
-
-    useEffect(() => {
-        const sync = async () => {
-            localStorage.setItem('finanzas_journal_med_list', JSON.stringify(medicationList))
-            await saveToSupabase('medications', 'finanzas_journal_med_list', { list: medicationList }, [medicationList])
-        }
-        sync()
     }, [medicationList])
 
     const handleAddMedication = () => {

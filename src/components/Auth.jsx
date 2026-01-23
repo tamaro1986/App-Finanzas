@@ -25,6 +25,10 @@ const Auth = ({ onAuthSuccess }) => {
     // ============================================================================
     const handleLogin = async (e) => {
         e.preventDefault()
+        if (!supabase) {
+            setError('Error: Supabase no está configurado. Revisa tu conexión.')
+            return
+        }
         setLoading(true)
         setError('')
         setMessage('')
@@ -56,6 +60,10 @@ const Auth = ({ onAuthSuccess }) => {
     // ============================================================================
     const handleSignup = async (e) => {
         e.preventDefault()
+        if (!supabase) {
+            setError('Error: Supabase no está configurado. Revisa tu conexión.')
+            return
+        }
         setLoading(true)
         setError('')
         setMessage('')

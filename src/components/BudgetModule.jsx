@@ -61,48 +61,17 @@ const ExecutionChart = ({ data }) => {
 // PROPÓSITO: Gestionar presupuestos mensuales y análisis de gastos
 // CONECTADO A: Supabase tabla 'budgets'
 // ============================================================================
-const BudgetModule = () => {
+const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     const [activeTab, setActiveTab] = useState('config') // 'config' or 'analysis'
     const [currentPeriod, setCurrentPeriod] = useState(format(new Date(), 'yyyy-MM'))
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All')
-
-    // Estado para presupuestos - se carga desde Supabase
-    const [budgets, setBudgets] = useState({})
-    // Estado para transacciones - se carga desde Supabase
-    const [transactions, setTransactions] = useState([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense' })
 
-    // ============================================================================
-    // EFFECT: Cargar datos desde Supabase al montar componente
-    // ============================================================================
-    useEffect(() => {
-        const loadData = async () => {
-            // Cargar presupuestos desde Supabase
-            const budgetData = await initializeData('budgets', 'finanzas_budgets')
-            setBudgets(budgetData || {})
-            // Cargar transacciones desde Supabase
-            const txData = await initializeData('transactions', 'finanzas_transactions')
-            setTransactions(txData || [])
-        }
-        loadData()
-    }, [])
-
-    // ============================================================================
-    // EFFECT: Escuchar cambios de storage (sincronización entre pestañas)
-    // ============================================================================
-    useEffect(() => {
-        const handleStorageChange = () => {
-            setTransactions(JSON.parse(localStorage.getItem('finanzas_transactions') || '[]'))
-            setBudgets(JSON.parse(localStorage.getItem('finanzas_budgets') || '{}'))
-        }
-        window.addEventListener('storage', handleStorageChange)
-        return () => window.removeEventListener('storage', handleStorageChange)
-    }, [])
-
     // Initialize with default categories if empty for the current period
+    // Solo lo hacemos si budgets ya no es null (ya se cargó de App.jsx)
     useEffect(() => {
-        if (!budgets[currentPeriod]) {
+        if (budgets && !budgets[currentPeriod]) {
             const defaults = [
                 ...DEFAULT_CATEGORIES.income.map(c => ({ id: c.id, name: c.name, projected: 0, actual: 0, type: 'income' })),
                 ...DEFAULT_CATEGORIES.expense.map(c => ({ id: c.id, name: c.name, projected: 0, actual: 0, type: 'expense' }))
@@ -112,7 +81,7 @@ const BudgetModule = () => {
                 [currentPeriod]: defaults
             }));
         }
-    }, [currentPeriod, budgets]);
+    }, [currentPeriod, budgets, setBudgets]);
 
     // ============================================================================
     // EFFECT: Sincronizar presupuestos con Supabase y localStorage

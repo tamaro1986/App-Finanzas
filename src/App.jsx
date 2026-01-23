@@ -19,7 +19,7 @@ import { supabase } from './lib/supabase'
 
 // ============================================================================
 // COMPONENTE PRINCIPAL: App
-// PROPÓSITO: Gestionar autenticación y navegación
+// PROPÓSITO: Gestionar autenticación, navegación y ESTADO GLOBAL del sistema
 // ============================================================================
 function App() {
     const [activeView, setActiveView] = useState('dashboard')
@@ -28,31 +28,93 @@ function App() {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
 
+    // ESTADO GLOBAL DE DATOS
+    const [transactions, setTransactions] = useState([])
+    const [accounts, setAccounts] = useState([])
+    const [budgets, setBudgets] = useState(null)
+    const [vehicles, setVehicles] = useState([])
+    const [medicalRecords, setMedicalRecords] = useState([])
+    const [patients, setPatients] = useState([])
+    const [tccEntries, setTccEntries] = useState([])
+    const [logEntries, setLogEntries] = useState([])
+    const [medicationList, setMedicationList] = useState(["Sertralina", "Quetiapina", "Magnesium", "Ashwaganda", "Ansiovit", "Somit"])
+
     // ============================================================================
-    // EFFECT: Verificar sesión al cargar la app
+    // EFFECT: Verificar sesión y cargar datos al iniciar
     // ============================================================================
     useEffect(() => {
-        // Verificar si hay una sesión activa
+        // Guard para evitar errores si supabase no está inicializado
+        if (!supabase) {
+            setLoading(false)
+            return
+        }
+
+        // 1. Verificar sesión activa
         supabase.auth.getSession().then(({ data: { session } }) => {
             setUser(session?.user ?? null)
-            setLoading(false)
+            if (session?.user) loadGlobalData()
+            else setLoading(false)
         })
 
-        // Escuchar cambios en la autenticación
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, session) => {
+        // 2. Escuchar cambios en la autenticación
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setUser(session?.user ?? null)
+            if (session?.user) loadGlobalData()
+            else {
+                setLoading(false)
+                // Limpiar estados locales al cerrar sesión
+                setTransactions([])
+                setAccounts([])
+                setBudgets(null)
+                setVehicles([])
+                setMedicalRecords([])
+                setPatients([])
+                setTccEntries([])
+                setLogEntries([])
+            }
         })
 
         return () => subscription.unsubscribe()
     }, [])
+
+    const loadGlobalData = async () => {
+        try {
+            const { initializeData } = await import('./lib/supabaseSync')
+
+            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData] = await Promise.all([
+                initializeData('transactions', 'finanzas_transactions'),
+                initializeData('accounts', 'finanzas_accounts'),
+                initializeData('budgets', 'finanzas_budgets'),
+                initializeData('vehicles', 'finanzas_vehicles'),
+                initializeData('medical_records', 'finanzas_medical_records'),
+                initializeData('patients', 'finanzas_patients'),
+                initializeData('journal_tcc', 'finanzas_journal_cbt'),
+                initializeData('journal_health_log', 'finanzas_journal_health_log'),
+                initializeData('medications', 'finanzas_journal_med_list')
+            ])
+
+            setTransactions(txData || [])
+            setAccounts(accData || [])
+            setBudgets(budgetData && !Array.isArray(budgetData) ? budgetData : (Array.isArray(budgetData) && budgetData.length > 0 ? budgetData[0] : {}))
+            setVehicles(vehicleData || [])
+            setMedicalRecords(medRecordData || [])
+            setPatients(patientData || [])
+            setTccEntries(tccData || [])
+            setLogEntries(logData || [])
+            if (medListData && medListData.length > 0) setMedicationList(medListData)
+        } catch (error) {
+            console.error('Error loading global data:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     // ============================================================================
     // FUNCIÓN: handleLogout
     // PROPÓSITO: Cerrar sesión del usuario
     // ============================================================================
     const handleLogout = async () => {
+        if (!supabase) return
         if (confirm('¿Cerrar sesión?')) {
             await supabase.auth.signOut()
             setUser(null)
@@ -64,19 +126,48 @@ function App() {
     const renderView = () => {
         switch (activeView) {
             case 'dashboard':
-                return <Dashboard />
+                return <Dashboard transactions={transactions} accounts={accounts} />
             case 'budget':
-                return <BudgetModule />
+                return (
+                    <BudgetModule
+                        budgets={budgets || {}}
+                        setBudgets={setBudgets}
+                        transactions={transactions}
+                    />
+                )
             case 'accounts':
-                return <Accounts />
+                return <Accounts accounts={accounts} setAccounts={setAccounts} />
             case 'transactions':
-                return <Transactions />
+                return (
+                    <Transactions
+                        transactions={transactions}
+                        setTransactions={setTransactions}
+                        accounts={accounts}
+                        setAccounts={setAccounts}
+                    />
+                )
             case 'vehicles':
-                return <Vehicles />
+                return <Vehicles vehicles={vehicles} setVehicles={setVehicles} />
             case 'medical':
-                return <MedicalHistory />
+                return (
+                    <MedicalHistory
+                        records={medicalRecords}
+                        setRecords={setMedicalRecords}
+                        patients={patients}
+                        setPatients={setPatients}
+                    />
+                )
             case 'journal':
-                return <Journal />
+                return (
+                    <Journal
+                        tccEntries={tccEntries}
+                        setTccEntries={setTccEntries}
+                        logEntries={logEntries}
+                        setLogEntries={setLogEntries}
+                        medicationList={medicationList}
+                        setMedicationList={setMedicationList}
+                    />
+                )
             case 'debts':
                 return <DebtModule />
             case 'investments':
@@ -84,7 +175,7 @@ function App() {
             case 'settings':
                 return <Settings />
             default:
-                return <Dashboard />
+                return <Dashboard transactions={transactions} accounts={accounts} />
         }
     }
 
@@ -98,7 +189,7 @@ function App() {
             <div className="flex items-center justify-center h-screen bg-gradient-to-br from-blue-50 via-white to-violet-50">
                 <div className="text-center">
                     <Loader className="animate-spin text-blue-600 mx-auto mb-4" size={48} />
-                    <p className="text-slate-600 font-bold">Cargando...</p>
+                    <p className="text-slate-600 font-bold italic">Cargando NegociosGarcia...</p>
                 </div>
             </div>
         )
@@ -106,7 +197,10 @@ function App() {
 
     // Mostrar pantalla de autenticación si no hay usuario
     if (!user) {
-        return <Auth onAuthSuccess={(user) => setUser(user)} />
+        return <Auth onAuthSuccess={(user) => {
+            setUser(user)
+            loadGlobalData()
+        }} />
     }
 
     // Mostrar aplicación principal si hay usuario autenticado

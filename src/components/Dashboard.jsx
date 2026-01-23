@@ -30,55 +30,33 @@ const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     </div>
 )
 
-const Dashboard = () => {
-    const [stats, setStats] = useState({
-        balance: 0,
-        income: 0,
-        expense: 0,
-        recentTransactions: []
-    })
+const Dashboard = ({ transactions = [] }) => {
+    // Calcular estadísticas basadas en las transacciones globales
+    const currentMonth = format(new Date(), 'yyyy-MM')
 
-    // ============================================================================
-    // EFFECT: Cargar y calcular estadísticas desde Supabase
-    // Calcula: balance total, ingresos del mes, gastos del mes, transacciones recientes
-    // ============================================================================
-    useEffect(() => {
-        // Función asíncrona para cargar datos desde Supabase
-        const loadStats = async () => {
-            // Cargar transacciones desde Supabase (con fallback a localStorage)
-            const transactions = await initializeData('transactions', 'finanzas_transactions')
-            // Obtener mes actual en formato YYYY-MM
-            const currentMonth = format(new Date(), 'yyyy-MM')
+    // Calcular ingresos del mes actual
+    const income = transactions
+        .filter(t => t.type === 'income' && t.date.startsWith(currentMonth))
+        .reduce((sum, t) => sum + t.amount, 0)
 
-            // Calcular ingresos del mes actual
-            const income = transactions
-                .filter(t => t.type === 'income' && t.date.startsWith(currentMonth))
-                .reduce((sum, t) => sum + t.amount, 0)
+    // Calcular gastos del mes actual
+    const expense = transactions
+        .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
+        .reduce((sum, t) => sum + t.amount, 0)
 
-            // Calcular gastos del mes actual
-            const expense = transactions
-                .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
-                .reduce((sum, t) => sum + t.amount, 0)
+    // Calcular balance total (todos los tiempos)
+    const balance = transactions.reduce((sum, t) => {
+        if (t.type === 'income') return sum + t.amount
+        if (t.type === 'expense') return sum - t.amount
+        return sum
+    }, 0)
 
-            // Calcular balance total (todos los tiempos)
-            const balance = transactions.reduce((sum, t) => {
-                if (t.type === 'income') return sum + t.amount
-                if (t.type === 'expense') return sum - t.amount
-                return sum
-            }, 0)
+    // Obtener las 5 transacciones más recientes
+    const recentTransactions = [...transactions]
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5)
 
-            // Obtener las 5 transacciones más recientes
-            const recent = [...transactions]
-                .sort((a, b) => new Date(b.date) - new Date(a.date))
-                .slice(0, 5)
-
-            // Actualizar estado con las estadísticas calculadas
-            setStats({ balance, income, expense, recentTransactions: recent })
-        }
-
-        // Ejecutar la función de carga
-        loadStats()
-    }, []) // Array vacío = solo se ejecuta al montar el componente
+    const stats = { balance, income, expense, recentTransactions }
 
     const todayStr = format(new Date(), "EEEE, d 'de' MMMM yyyy", { locale: es })
 

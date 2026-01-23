@@ -13,12 +13,8 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // PROPÓSITO: Gestionar historial médico y pacientes
 // CONECTADO A: Supabase tablas 'medical_records' y 'patients'
 // ============================================================================
-const MedicalHistory = () => {
+const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
     const [activeTab, setActiveTab] = useState('records')
-    // Estados - se cargan desde Supabase
-    const [records, setRecords] = useState([])
-    const [patients, setPatients] = useState([])
-
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isPatientModalOpen, setIsPatientModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -42,46 +38,6 @@ const MedicalHistory = () => {
     })
 
     const [newPatient, setNewPatient] = useState({ name: '', age: '', bloodType: '', allergies: '', notes: '' })
-
-    // ============================================================================
-    // EFFECT: Cargar datos desde Supabase
-    // ============================================================================
-    useEffect(() => {
-        const loadData = async () => {
-            const recordsData = await initializeData('medical_records', 'finanzas_medical_records')
-            setRecords(recordsData)
-            const patientsData = await initializeData('patients', 'finanzas_patients')
-            setPatients(patientsData)
-        }
-        loadData()
-    }, [])
-
-    // ============================================================================
-    // EFFECT: Sincronizar con Supabase
-    // ============================================================================
-    useEffect(() => {
-        const sync = async () => {
-            localStorage.setItem('finanzas_medical_records', JSON.stringify(records))
-            if (records.length > 0) {
-                for (const record of records) {
-                    await saveToSupabase('medical_records', 'finanzas_medical_records', record, records)
-                }
-            }
-        }
-        sync()
-    }, [records])
-
-    useEffect(() => {
-        const sync = async () => {
-            localStorage.setItem('finanzas_patients', JSON.stringify(patients))
-            if (patients.length > 0) {
-                for (const patient of patients) {
-                    await saveToSupabase('patients', 'finanzas_patients', patient, patients)
-                }
-            }
-        }
-        sync()
-    }, [patients])
 
     // --- Audio Logic ---
     const startRecording = async () => {

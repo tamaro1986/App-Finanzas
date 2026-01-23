@@ -12,9 +12,7 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // PROPÓSITO: Gestionar vehículos y control de mantenimientos
 // CONECTADO A: Supabase tabla 'vehicles'
 // ============================================================================
-const Vehicles = () => {
-    // Estado para vehículos - se carga desde Supabase
-    const [vehicles, setVehicles] = useState([])
+const Vehicles = ({ vehicles, setVehicles }) => {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newVehicle, setNewVehicle] = useState({
         name: '',
@@ -26,26 +24,6 @@ const Vehicles = () => {
             { id: 2, label: 'Pastillas de Freno', lastMileage: '', interval: 20000, estimatedCost: 0 }
         ]
     })
-
-    // ============================================================================
-    // EFFECT: Cargar vehículos desde Supabase al montar componente
-    // ============================================================================
-    useEffect(() => {
-        const loadVehicles = async () => {
-            const data = await initializeData('vehicles', 'finanzas_vehicles')
-            setVehicles(data)
-        }
-        loadVehicles()
-    }, [])
-
-    // ============================================================================
-    // EFFECT: Sincronizar con localStorage (fallback)
-    // ============================================================================
-    useEffect(() => {
-        if (vehicles.length > 0) {
-            localStorage.setItem('finanzas_vehicles', JSON.stringify(vehicles))
-        }
-    }, [vehicles])
 
     // ============================================================================
     // FUNCIÓN: handleAddVehicle
