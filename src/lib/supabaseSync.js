@@ -41,39 +41,63 @@ export const getUserId = async () => {
 // ============================================================================
 export const syncToSupabase = async (tableName, localStorageKey, data = null) => {
     // Si supabase no está configurado, no hacer nada y retornar false
-    if (!supabase) return false
+    if (!supabase) {
+        console.warn('Supabase not configured - skipping sync')
+        return false
+    }
 
     try {
         // Obtener el ID del usuario autenticado
         const userId = await getUserId()
         // Si no hay usuario autenticado, no se puede sincronizar
-        if (!userId) return false
+        if (!userId) {
+            console.warn('No user authenticated - cannot sync to Supabase')
+            return false
+        }
 
         // Si no se pasó data, leer desde localStorage
         const dataToSync = data || JSON.parse(localStorage.getItem(localStorageKey) || '[]')
 
         // Si no hay datos para sincronizar, retornar true (éxito vacío)
-        if (!dataToSync || dataToSync.length === 0) return true
+        if (!dataToSync || (Array.isArray(dataToSync) && dataToSync.length === 0)) {
+            console.log(`No data to sync for ${tableName}`)
+            return true
+        }
 
         // Agregar user_id a cada elemento del array para asociarlo al usuario
         const dataWithUserId = Array.isArray(dataToSync)
             ? dataToSync.map(item => ({ ...item, user_id: userId }))
             : { ...dataToSync, user_id: userId }
 
+        console.log(`Syncing ${Array.isArray(dataWithUserId) ? dataWithUserId.length : 1} items to ${tableName}...`)
+
         // Insertar o actualizar datos en Supabase usando upsert
         // upsert = insert si no existe, update si ya existe
-        const { error } = await supabase
+        const { data: result, error } = await supabase
             .from(tableName)
-            .upsert(dataWithUserId, { onConflict: 'id' })
+            .upsert(dataWithUserId, {
+                onConflict: 'id',
+                ignoreDuplicates: false
+            })
+            .select()
 
         // Si hubo error, lanzar excepción
-        if (error) throw error
+        if (error) {
+            console.error(`Supabase sync error (${tableName}):`, error)
+            throw error
+        }
 
         // Sincronización exitosa
+        console.log(`✓ Successfully synced to ${tableName}`)
         return true
     } catch (error) {
-        // Loguear error y retornar false
-        console.error(`Error syncing to Supabase (${tableName}):`, error)
+        // Loguear error detallado y retornar false
+        console.error(`⚠️ Error syncing to Supabase (${tableName}):`, {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint
+        })
         return false
     }
 }
@@ -132,35 +156,67 @@ export const fetchFromSupabase = async (tableName, localStorageKey) => {
 // RETORNA: Boolean indicando si el guardado fue exitoso
 // ============================================================================
 export const saveToSupabase = async (tableName, localStorageKey, item, allItems) => {
-    // Primero guardar en localStorage (siempre funciona)
-    localStorage.setItem(localStorageKey, JSON.stringify(allItems))
+    // Primero guardar en localStorage (siempre funciona como backup)
+    try {
+        localStorage.setItem(localStorageKey, JSON.stringify(allItems))
+    } catch (localError) {
+        console.error('Error saving to localStorage:', localError)
+        // Si falla localStorage, es un problema crítico
+        return { success: false, savedToCloud: false, savedLocally: false, error: localError }
+    }
 
-    // Si supabase no está configurado, retornar true (guardado local exitoso)
-    if (!supabase) return true
+    // Si supabase no está configurado, retornar éxito local
+    if (!supabase) {
+        return { success: true, savedToCloud: false, savedLocally: true, message: 'Guardado solo localmente (Supabase no configurado)' }
+    }
 
     try {
         // Obtener el ID del usuario autenticado
         const userId = await getUserId()
-        // Si no hay usuario, solo guardar local
-        if (!userId) return true
+
+        // Si no hay usuario autenticado, solo guardar local
+        if (!userId) {
+            console.warn('No user authenticated - data saved locally only')
+            return { success: true, savedToCloud: false, savedLocally: true, message: 'Guardado solo localmente (sin sesión)' }
+        }
 
         // Agregar user_id al item
         const itemWithUserId = { ...item, user_id: userId }
 
-        // Insertar o actualizar en Supabase
-        const { error } = await supabase
+        // Insertar o actualizar en Supabase con upsert
+        const { data, error } = await supabase
             .from(tableName)
-            .upsert(itemWithUserId, { onConflict: 'id' })
+            .upsert(itemWithUserId, {
+                onConflict: 'id',
+                ignoreDuplicates: false
+            })
+            .select()
 
-        // Si hubo error, lanzar excepción
-        if (error) throw error
+        // Si hubo error en Supabase, lanzar excepción
+        if (error) {
+            console.error(`Supabase error (${tableName}):`, error)
+            throw error
+        }
 
-        // Guardado exitoso
-        return true
+        // Guardado exitoso en ambos lugares
+        console.log(`✓ Data saved successfully to ${tableName}`)
+        return { success: true, savedToCloud: true, savedLocally: true, data }
+
     } catch (error) {
-        // Loguear error pero retornar true porque se guardó en localStorage
-        console.error(`Error saving to Supabase (${tableName}):`, error)
-        return true // Retornamos true porque localStorage sí funcionó
+        // Error al guardar en Supabase, pero localStorage funcionó
+        console.error(`⚠️ Error syncing to Supabase (${tableName}):`, error.message || error)
+
+        // Mostrar advertencia al usuario
+        const errorMsg = error.message || 'Error desconocido'
+        console.warn(`⚠️ ADVERTENCIA: Los datos se guardaron SOLO LOCALMENTE. Error de sincronización: ${errorMsg}`)
+
+        return {
+            success: true, // true porque localStorage funcionó
+            savedToCloud: false,
+            savedLocally: true,
+            error: errorMsg,
+            message: 'Guardado solo localmente - Error de sincronización con la nube'
+        }
     }
 }
 

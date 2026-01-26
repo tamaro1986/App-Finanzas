@@ -9,6 +9,8 @@ import { DEFAULT_CATEGORIES } from '../constants/categories'
 import * as XLSX from 'xlsx' // Importar librería para Excel
 // Importar funciones de sincronización con Supabase
 import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
+// Importar sistema de notificaciones
+import { useSyncNotifications } from './SyncNotification'
 
 // ============================================================================
 // COMPONENTE: Transactions
@@ -16,6 +18,8 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // CONECTADO A: Supabase tablas 'transactions' y 'accounts'
 // ============================================================================
 const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) => {
+    // Hook de notificaciones
+    const { showNotification, NotificationContainer } = useSyncNotifications()
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isImportModalOpen, setIsImportModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
@@ -128,8 +132,23 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
         // Agregar transacción al inicio del array
         const updatedTransactions = [transaction, ...transactions]
         setTransactions(updatedTransactions)
+
         // Sincronizar transacción con Supabase
-        await saveToSupabase('transactions', 'finanzas_transactions', transaction, updatedTransactions)
+        const txSaveResult = await saveToSupabase('transactions', 'finanzas_transactions', transaction, updatedTransactions)
+
+        // Verificar si hubo problemas de sincronización
+        if (txSaveResult && !txSaveResult.savedToCloud) {
+            console.warn('⚠️ Transacción guardada solo localmente:', txSaveResult.message || txSaveResult.error)
+
+            // Mostrar notificación si hay un error real
+            if (txSaveResult.error) {
+                showNotification(
+                    `⚠️ La transacción se guardó solo en este dispositivo. ${txSaveResult.error}. Verifica tu conexión a internet.`,
+                    'warning',
+                    7000
+                )
+            }
+        }
 
         // Actualizar balance de la cuenta afectada
         const updatedAccounts = accounts.map(acc => {
@@ -151,7 +170,12 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
         // Sincronizar cuenta actualizada con Supabase
         const updatedAccount = updatedAccounts.find(acc => acc.id === transaction.accountId)
         if (updatedAccount) {
-            await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+            const accSaveResult = await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+
+            // Verificar sincronización de cuenta
+            if (accSaveResult && !accSaveResult.savedToCloud && accSaveResult.error) {
+                console.warn('⚠️ Cuenta actualizada solo localmente:', accSaveResult.message || accSaveResult.error)
+            }
         }
     }
 
@@ -185,7 +209,12 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                 // Sincronizar cuenta actualizada con Supabase
                 const updatedAccount = updatedAccounts.find(acc => acc.id === txToDelete.accountId)
                 if (updatedAccount) {
-                    await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+                    const accSaveResult = await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+
+                    // Verificar sincronización
+                    if (accSaveResult && !accSaveResult.savedToCloud) {
+                        console.warn('⚠️ Cuenta actualizada solo localmente después de eliminar:', accSaveResult.message || accSaveResult.error)
+                    }
                 }
             }
 
@@ -725,6 +754,9 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                     </div>
                 </div>
             )}
+
+            {/* Contenedor de Notificaciones */}
+            <NotificationContainer />
         </div>
     )
 }

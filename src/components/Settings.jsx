@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { supabase, updateSupabaseConfig } from '../lib/supabase';
-import { Save, Trash2, Download, Upload, CheckCircle, AlertCircle, RefreshCw, Sparkles, Brain } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { supabase, updateSupabaseConfig, getSupabaseConfig } from '../lib/supabase';
+import { Save, Trash2, Download, Upload, CheckCircle, AlertCircle, RefreshCw, Sparkles, Brain, Info } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const Settings = () => {
@@ -8,6 +8,13 @@ const Settings = () => {
     const [key, setKey] = useState(localStorage.getItem('supabase_key') || '');
     const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
     const [status, setStatus] = useState({ type: '', message: '' });
+    const [configInfo, setConfigInfo] = useState(null);
+
+    // Cargar información de configuración al montar el componente
+    useEffect(() => {
+        const config = getSupabaseConfig();
+        setConfigInfo(config);
+    }, []);
 
     const handleSaveConfig = () => {
         if (!url || !key) {
@@ -136,6 +143,55 @@ const Settings = () => {
                         </div>
                         <h3 className="font-semibold text-slate-800">Conexión Supabase</h3>
                     </div>
+
+                    {/* Banner informativo sobre la fuente de configuración */}
+                    {configInfo && (
+                        <div className={`p-4 rounded-xl border ${configInfo.source.includes('Environment')
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : configInfo.source.includes('Manual')
+                                    ? 'bg-blue-50 border-blue-200'
+                                    : 'bg-amber-50 border-amber-200'
+                            }`}>
+                            <div className="flex items-start gap-3">
+                                <Info size={18} className={
+                                    configInfo.source.includes('Environment')
+                                        ? 'text-emerald-600 mt-0.5'
+                                        : configInfo.source.includes('Manual')
+                                            ? 'text-blue-600 mt-0.5'
+                                            : 'text-amber-600 mt-0.5'
+                                } />
+                                <div className="flex-1">
+                                    <p className={`text-sm font-semibold mb-1 ${configInfo.source.includes('Environment')
+                                            ? 'text-emerald-800'
+                                            : configInfo.source.includes('Manual')
+                                                ? 'text-blue-800'
+                                                : 'text-amber-800'
+                                        }`}>
+                                        {configInfo.source.includes('Environment')
+                                            ? '✅ Configuración Automática Activa'
+                                            : configInfo.source.includes('Manual')
+                                                ? 'ℹ️ Configuración Manual'
+                                                : '⚠️ Usando Valores por Defecto'}
+                                    </p>
+                                    <p className={`text-xs ${configInfo.source.includes('Environment')
+                                            ? 'text-emerald-700'
+                                            : configInfo.source.includes('Manual')
+                                                ? 'text-blue-700'
+                                                : 'text-amber-700'
+                                        }`}>
+                                        {configInfo.source.includes('Environment')
+                                            ? 'Las credenciales se cargan automáticamente desde el archivo .env. No necesitas configurar nada manualmente.'
+                                            : configInfo.source.includes('Manual')
+                                                ? 'Estás usando credenciales configuradas manualmente. Puedes cambiarlas abajo.'
+                                                : 'Usando credenciales por defecto. Te recomendamos configurar tus propias credenciales.'}
+                                    </p>
+                                    <p className="text-xs mt-2 font-mono bg-white/50 px-2 py-1 rounded">
+                                        URL: {configInfo.url}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="space-y-4">
                         <div>
