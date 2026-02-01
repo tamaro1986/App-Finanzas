@@ -32,14 +32,14 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
     // Calcular estadísticas basadas en las transacciones globales
     const currentMonth = format(new Date(), 'yyyy-MM')
 
-    // Calcular ingresos del mes actual
+    // Calcular ingresos del mes actual (excluyendo transferencias)
     const income = transactions
-        .filter(t => t.type === 'income' && t.date.startsWith(currentMonth))
+        .filter(t => t.type === 'income' && t.date.startsWith(currentMonth) && !t.isTransfer)
         .reduce((sum, t) => sum + t.amount, 0)
 
-    // Calcular gastos del mes actual
+    // Calcular gastos del mes actual (excluyendo transferencias)
     const expense = transactions
-        .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
+        .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth) && !t.isTransfer)
         .reduce((sum, t) => sum + t.amount, 0)
 
     // El Balance Total debe ser la suma real de los saldos de todas las cuentas

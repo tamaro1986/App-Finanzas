@@ -154,6 +154,34 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     };
 
     // ============================================================================
+    // FUNCIÓN: closeModal
+    // PROPÓSITO: Cerrar modal y resetear estados de formulario
+    // ============================================================================
+    const closeModal = () => {
+        setIsModalOpen(false)
+
+        // Resetear newTx
+        setNewTx({
+            date: format(new Date(), 'yyyy-MM-dd'),
+            accountId: accounts[0]?.id || '',
+            categoryId: '',
+            amount: '',
+            type: 'expense',
+            note: '',
+            attachment: null
+        })
+
+        // Resetear transferData
+        setTransferData({
+            date: format(new Date(), 'yyyy-MM-dd'),
+            fromAccountId: '',
+            toAccountId: '',
+            amount: '',
+            note: ''
+        })
+    }
+
+    // ============================================================================
     // EFFECT: Establecer cuenta por defecto al abrir modal
     // ============================================================================
     useEffect(() => {
@@ -164,7 +192,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
     // ============================================================================
     // FUNCIÓN: handleAddTransaction
-    // PROPÓSITO: Agregar nueva transacción y actualizar balance de cuenta
+    // PROPÓSITO: Agregar o editar transacción y actualizar balance de cuenta
     // SINCRONIZA: Tanto la transacción como la cuenta actualizada con Supabase
     // ============================================================================
     const handleAddTransaction = async (e) => {
@@ -181,14 +209,83 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             return
         }
 
-        // Crear objeto de transacción con ID único
-        const transaction = {
-            id: crypto.randomUUID(),
-            ...newTx,
-            amount: parseFloat(newTx.amount)
-        }
+        const isEditing = !!newTx.id
 
-        await processTransaction(transaction)
+        if (isEditing) {
+            // MODO EDICIÓN: Actualizar transacción existente
+            const oldTransaction = transactions.find(t => t.id === newTx.id)
+            if (!oldTransaction) {
+                addNotification('Error: transacción no encontrada', 'error')
+                return
+            }
+
+            // Revertir el efecto de la transacción anterior
+            const accountsAfterRevert = accounts.map(acc => {
+                if (acc.id === oldTransaction.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = oldTransaction.type === 'income' ? acc.balance + oldTransaction.amount : acc.balance - oldTransaction.amount
+                    } else {
+                        newBalance = oldTransaction.type === 'income' ? acc.balance - oldTransaction.amount : acc.balance + oldTransaction.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+
+            // Aplicar el efecto de la nueva transacción actualizada
+            const updatedTransaction = {
+                ...newTx,
+                amount: parseFloat(newTx.amount)
+            }
+
+            const finalAccounts = accountsAfterRevert.map(acc => {
+                if (acc.id === updatedTransaction.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = updatedTransaction.type === 'income' ? acc.balance - updatedTransaction.amount : acc.balance + updatedTransaction.amount
+                    } else {
+                        newBalance = updatedTransaction.type === 'income' ? acc.balance + updatedTransaction.amount : acc.balance - updatedTransaction.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+
+            setAccounts(finalAccounts)
+
+            // Actualizar la transacción en el array
+            const updatedTransactions = transactions.map(t =>
+                t.id === newTx.id ? updatedTransaction : t
+            )
+            setTransactions(updatedTransactions)
+
+            // Sincronizar ambas cuentas si cambió de cuenta
+            const accountsToUpdate = oldTransaction.accountId === updatedTransaction.accountId
+                ? [updatedTransaction.accountId]
+                : [oldTransaction.accountId, updatedTransaction.accountId]
+
+            for (const accountId of accountsToUpdate) {
+                const account = finalAccounts.find(a => a.id === accountId)
+                if (account) {
+                    await saveToSupabase('accounts', 'finanzas_accounts', account, finalAccounts)
+                }
+            }
+
+            // Sincronizar transacción actualizada
+            await saveToSupabase('transactions', 'finanzas_transactions', updatedTransaction, updatedTransactions)
+
+            addNotification('Transacción actualizada correctamente', 'success')
+        } else {
+            // MODO CREACIÓN: Nueva transacción
+            const transaction = {
+                id: crypto.randomUUID(),
+                ...newTx,
+                amount: parseFloat(newTx.amount)
+            }
+
+            await processTransaction(transaction)
+        }
 
         // Cerrar modal y resetear formulario
         setIsModalOpen(false)
@@ -382,7 +479,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
     // ============================================================================
     // FUNCIÓN: handleAddTransfer
-    // PROPÓSITO: Crear transferencia entre cuentas (2 transacciones vinculadas)
+    // PROPÓSITO: Crear o editar transferencia entre cuentas (2 transacciones vinculadas)
     // ============================================================================
     const handleAddTransfer = async (e) => {
         if (e) e.preventDefault()
@@ -404,8 +501,62 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             return
         }
 
+        const isEditing = !!transferData.id
+
+        if (isEditing) {
+            // MODO EDICIÓN: Eliminar transferencia anterior y crear nueva
+            const oldTx1 = transactions.find(t => t.id === transferData.id)
+            const oldTx2 = transactions.find(t => t.id === transferData.siblingId)
+
+            if (!oldTx1 || !oldTx2) {
+                addNotification('Error: no se encontró la transferencia original', 'error')
+                return
+            }
+
+            // Revertir ambas transacciones de la transferencia anterior
+            let revertedAccounts = [...accounts]
+
+            // Revertir tx1
+            revertedAccounts = revertedAccounts.map(acc => {
+                if (acc.id === oldTx1.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = oldTx1.type === 'income' ? acc.balance + oldTx1.amount : acc.balance - oldTx1.amount
+                    } else {
+                        newBalance = oldTx1.type === 'income' ? acc.balance - oldTx1.amount : acc.balance + oldTx1.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+
+            // Revertir tx2
+            revertedAccounts = revertedAccounts.map(acc => {
+                if (acc.id === oldTx2.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = oldTx2.type === 'income' ? acc.balance + oldTx2.amount : acc.balance - oldTx2.amount
+                    } else {
+                        newBalance = oldTx2.type === 'income' ? acc.balance - oldTx2.amount : acc.balance + oldTx2.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+
+            setAccounts(revertedAccounts)
+
+            // Eliminar transacciones anteriores del array
+            const txWithoutOld = transactions.filter(t => t.id !== transferData.id && t.id !== transferData.siblingId)
+            setTransactions(txWithoutOld)
+
+            // Eliminar de Supabase
+            await deleteFromSupabase('transactions', 'finanzas_transactions', transferData.id, txWithoutOld)
+            await deleteFromSupabase('transactions', 'finanzas_transactions', transferData.siblingId, txWithoutOld)
+        }
+
         // Crear ID único compartido para vincular ambas transacciones
-        const transferId = crypto.randomUUID()
+        const transferId = isEditing ? transferData.transferId : crypto.randomUUID()
 
         // Encontrar nombres de cuentas
         const fromAccount = accounts.find(a => a.id === transferData.fromAccountId)
@@ -449,7 +600,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             await processTransaction(tx1)
             await processTransaction(tx2)
 
-            addNotification('Transferencia completada exitosamente', 'success')
+            addNotification(isEditing ? 'Transferencia actualizada exitosamente' : 'Transferencia completada exitosamente', 'success')
             setIsModalOpen(false)
 
             // Resetear formulario de transferencia
@@ -482,8 +633,43 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // PROPÓSITO: Abrir modal de edición con los datos de la transacción
     // ============================================================================
     const openEditModal = (transaction) => {
-        setEditingTransaction({ ...transaction })
-        setIsEditModalOpen(true)
+        // Si es una transferencia, poblar transferData y establecer tipo 'transfer'
+        if (transaction.isTransfer) {
+            // Encontrar la transacción hermana para obtener la cuenta de destino
+            const siblingTx = transactions.find(
+                t => t.transferId === transaction.transferId && t.id !== transaction.id
+            )
+
+            // Determinar cuál es la cuenta origen y cuál es la destino
+            // La transacción de tipo 'expense' es la cuenta de origen
+            const fromAccountId = transaction.type === 'expense' ? transaction.accountId : siblingTx?.accountId
+            const toAccountId = transaction.type === 'income' ? transaction.accountId : siblingTx?.accountId
+
+            setTransferData({
+                date: transaction.date,
+                fromAccountId: fromAccountId || '',
+                toAccountId: toAccountId || '',
+                amount: transaction.amount.toString(),
+                note: transaction.note || '',
+                id: transaction.id, // Guardar el ID para la edición
+                transferId: transaction.transferId,
+                siblingId: siblingTx?.id // ID de la transacción hermana
+            })
+
+            setNewTx({
+                ...newTx,
+                type: 'transfer'
+            })
+        } else {
+            // Es una transacción normal (ingreso/gasto)
+            setNewTx({
+                ...transaction,
+                amount: transaction.amount.toString(),
+                id: transaction.id // Guardar el ID para la edición
+            })
+        }
+
+        setIsModalOpen(true)
     }
 
     // ============================================================================
@@ -1290,10 +1476,15 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             {/* New Transaction Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeModal} />
                     <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
                         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                            <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>Nuevo Movimiento</h3>
+                            <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>
+                                {(newTx.id || transferData.id) ? 'Editar Movimiento' : 'Nuevo Movimiento'}
+                            </h3>
+                            <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                <X size={20} />
+                            </button>
                         </div>
 
                         <form onSubmit={handleAddTransaction} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">

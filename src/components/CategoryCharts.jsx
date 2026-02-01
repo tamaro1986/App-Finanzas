@@ -113,7 +113,10 @@ const CategoryCharts = ({ transactions }) => {
 
     // 1. Obtener datos procesados para el mes seleccionado
     const data = useMemo(() => {
-        const periodTransactions = transactions.filter(t => t.date.startsWith(currentPeriod));
+        // Filtrar transacciones del periodo Y excluir transferencias
+        const periodTransactions = transactions.filter(t =>
+            t.date.startsWith(currentPeriod) && !t.isTransfer
+        );
 
         const incomeMap = {};
         const expenseMap = {};
