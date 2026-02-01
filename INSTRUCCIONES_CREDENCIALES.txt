@@ -1,0 +1,47 @@
+# ============================================================================
+# INSTRUCCIONES: ACTUALIZAR CREDENCIALES DE SUPABASE
+# ============================================================================
+# 
+# PASO 1: Obtener tus credenciales
+# --------------------------------
+# 1. Ve a: https://supabase.com/dashboard
+# 2. Selecciona tu proyecto (app-finanzas o tamaro1986's Project)
+# 3. Ve a Settings (⚙️) → API
+# 4. Copia los siguientes valores:
+#
+#    a) Project URL (ejemplo: https://abcdefgh.supabase.co)
+#    b) anon public key (la key larga que empieza con eyJ...)
+#
+# PASO 2: Pegar tus credenciales en el archivo .env
+# --------------------------------------------------
+# 1. Abre el archivo .env (en la raíz del proyecto)
+# 2. Reemplaza las líneas 9 y 12 con TUS valores
+# 3. Guarda el archivo
+#
+# PASO 3: Reiniciar el servidor
+# ------------------------------
+# 1. Ve a la terminal donde corre npm run dev
+# 2. Presiona Ctrl+C para detener
+# 3. Ejecuta: npm run dev
+#
+# PASO 4: Verificar
+# -----------------
+# 1. Abre la aplicación
+# 2. Ve a Settings
+# 3. Deberías ver un banner VERDE que dice:
+#    "✅ Configuración Automática Activa"
+#
+# ============================================================================
+# EJEMPLO DE CÓMO DEBE VERSE EL ARCHIVO .env:
+# ============================================================================
+#
+# VITE_SUPABASE_URL=https://tu-proyecto-aqui.supabase.co
+# VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+#
+# ============================================================================
+# IMPORTANTE:
+# - NO uses las credenciales de ejemplo de arriba
+# - Usa TUS PROPIAS credenciales de Supabase
+# - La URL debe terminar en .supabase.co
+# - La key debe empezar con eyJ
+# ============================================================================

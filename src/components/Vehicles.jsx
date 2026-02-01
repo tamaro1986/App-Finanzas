@@ -2,7 +2,7 @@
 // IMPORTS: React, iconos y utilidades de fecha
 // ============================================================================
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Car, Settings, Calendar, Gauge, AlertTriangle, CheckCircle2, ChevronRight, X, DollarSign } from 'lucide-react'
+import { Plus, Trash2, Car, Settings, Calendar, Gauge, AlertTriangle, CheckCircle2, ChevronRight, X, DollarSign, Clock, Pencil } from 'lucide-react'
 import { format } from 'date-fns'
 // Importar funciones de sincronización con Supabase
 import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
@@ -14,6 +14,7 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 // ============================================================================
 const Vehicles = ({ vehicles, setVehicles }) => {
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [editingId, setEditingId] = useState(null)
     const [newVehicle, setNewVehicle] = useState({
         name: '',
         plate: '',
@@ -32,9 +33,8 @@ const Vehicles = ({ vehicles, setVehicles }) => {
     // ============================================================================
     const handleAddVehicle = async (e) => {
         e.preventDefault()
-        // Crear objeto de vehículo con datos procesados
-        const vehicle = {
-            id: crypto.randomUUID(),
+
+        const vehicleData = {
             ...newVehicle,
             currentMileage: parseInt(newVehicle.currentMileage),
             maintenanceItems: newVehicle.maintenanceItems.map(item => ({
@@ -45,15 +45,27 @@ const Vehicles = ({ vehicles, setVehicles }) => {
             }))
         }
 
-        // Agregar al estado
-        const updatedVehicles = [...vehicles, vehicle]
-        setVehicles(updatedVehicles)
-
-        // Sincronizar con Supabase
-        await saveToSupabase('vehicles', 'finanzas_vehicles', vehicle, updatedVehicles)
+        let updatedVehicles;
+        if (editingId) {
+            // Modo Edición
+            updatedVehicles = vehicles.map(v => v.id === editingId ? { ...vehicleData, id: editingId } : v)
+            setVehicles(updatedVehicles)
+            const updatedVehicle = updatedVehicles.find(v => v.id === editingId)
+            await saveToSupabase('vehicles', 'finanzas_vehicles', updatedVehicle, updatedVehicles)
+        } else {
+            // Modo Creación
+            const vehicle = {
+                id: crypto.randomUUID(),
+                ...vehicleData
+            }
+            updatedVehicles = [...vehicles, vehicle]
+            setVehicles(updatedVehicles)
+            await saveToSupabase('vehicles', 'finanzas_vehicles', vehicle, updatedVehicles)
+        }
 
         // Cerrar modal y resetear formulario
         setIsModalOpen(false)
+        setEditingId(null)
         setNewVehicle({
             name: '', plate: '', type: 'Carro', currentMileage: '',
             maintenanceItems: [
@@ -61,6 +73,25 @@ const Vehicles = ({ vehicles, setVehicles }) => {
                 { id: 2, label: 'Pastillas de Freno', lastMileage: '', interval: 20000, estimatedCost: 0 }
             ]
         })
+    }
+
+    // ============================================================================
+    // FUNCIÓN: openEditModal
+    // PROPÓSITO: Abrir modal con datos de un vehículo existente para editar
+    // ============================================================================
+    const openEditModal = (vehicle) => {
+        setEditingId(vehicle.id)
+        setNewVehicle({
+            ...vehicle,
+            maintenanceItems: vehicle.maintenanceItems.map(item => ({
+                ...item,
+                // Asegurar que los valores sean números o strings vacíos para el input
+                lastMileage: item.lastMileage ?? '',
+                interval: item.interval ?? '',
+                estimatedCost: item.estimatedCost ?? 0
+            }))
+        })
+        setIsModalOpen(true)
     }
 
     // ============================================================================
@@ -120,10 +151,16 @@ const Vehicles = ({ vehicles, setVehicles }) => {
     }
 
     const getStatus = (current, last, interval) => {
-        const remaining = (last + interval) - current
-        if (remaining <= 0) return { label: 'VENCIDO', color: 'text-rose-600 bg-rose-50', icon: AlertTriangle }
-        if (remaining < 500) return { label: 'PRÓXIMO', color: 'text-amber-600 bg-amber-50', icon: Calendar }
-        return { label: 'AL DÍA', color: 'text-emerald-600 bg-emerald-50', icon: CheckCircle2 }
+        const target = (parseInt(last) || 0) + (parseInt(interval) || 0)
+        const remaining = target - current
+        const traveled = current - last
+
+        // Caso de error: kilometraje actual menor al último mantenimiento
+        if (traveled < 0) return { label: 'REVISAR DATOS', color: 'text-slate-400 bg-slate-100', icon: AlertTriangle, remaining: 0, target, overdue: false }
+
+        if (remaining <= 0) return { label: 'VENCIDO', color: 'text-rose-600 bg-rose-50', icon: AlertTriangle, remaining: Math.abs(remaining), target, overdue: true }
+        if (remaining < 500) return { label: 'PRÓXIMO', color: 'text-amber-600 bg-amber-50', icon: Calendar, remaining, target, overdue: false }
+        return { label: 'AL DÍA', color: 'text-emerald-600 bg-emerald-50', icon: CheckCircle2, remaining, target, overdue: false }
     }
 
     return (
@@ -163,9 +200,14 @@ const Vehicles = ({ vehicles, setVehicles }) => {
                                             <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">{v.type}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => deleteVehicle(v.id)} className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
-                                        <Trash2 size={18} />
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => openEditModal(v)} className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Editar Vehículo">
+                                            <Pencil size={18} />
+                                        </button>
+                                        <button onClick={() => deleteVehicle(v.id)} className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title="Eliminar Vehículo">
+                                            <Trash2 size={18} />
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-4">
                                     <div className="flex-1">
@@ -212,14 +254,26 @@ const Vehicles = ({ vehicles, setVehicles }) => {
 
                                             <div className="space-y-1">
                                                 <div className="flex items-end justify-between">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase">Uso</span>
-                                                    <span className="text-[10px] font-bold text-slate-500">{v.currentMileage - item.lastMileage} / {item.interval} KM</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                        {v.currentMileage < item.lastMileage ? 'Estado de KM' : s.overdue ? 'Aviso de Mantenimiento' : 'Próximo cambio'}
+                                                    </span>
+                                                    <span className={`text-[10px] font-black border-b-2 pb-0.5 ${s.overdue ? 'text-rose-600 border-rose-100' : 'text-slate-900 border-slate-100'}`}>
+                                                        {v.currentMileage < item.lastMileage
+                                                            ? 'Actual < Último'
+                                                            : s.overdue
+                                                                ? `Vencido hace: ${s.remaining.toLocaleString()} KM`
+                                                                : `Faltan: ${s.remaining.toLocaleString()} KM`}
+                                                    </span>
                                                 </div>
-                                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden text-[0px]">
+                                                <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden text-[0px] shadow-inner">
                                                     <div
-                                                        className={`h-full transition-all duration-1000 ${progress > 90 ? 'bg-rose-500' : 'bg-blue-600'}`}
+                                                        className={`h-full transition-all duration-1000 ${s.overdue ? 'bg-rose-500' : progress > 70 ? 'bg-amber-400' : 'bg-emerald-500'}`}
                                                         style={{ width: `${progress}%` }}
                                                     />
+                                                </div>
+                                                <div className="flex justify-between items-center text-[8px] font-black text-slate-400 bg-slate-50/50 px-2 py-1 rounded-md mt-1 italic">
+                                                    <span>Objetivo: {s.target.toLocaleString()} KM</span>
+                                                    <span>Frecuencia: {item.interval.toLocaleString()} KM</span>
                                                 </div>
                                             </div>
 
@@ -240,105 +294,155 @@ const Vehicles = ({ vehicles, setVehicles }) => {
 
             {isModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-300">
-                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                            <h3 className="text-xl font-bold text-slate-900">Agregar Vehículo</h3>
-                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X /></button>
+                    <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => { setIsModalOpen(false); setEditingId(null); }} />
+                    <div className="relative bg-white rounded-[2.5rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-white">
+                            <div>
+                                <h3 className="text-2xl font-black text-slate-900 italic uppercase">
+                                    {editingId ? 'Editar Vehículo' : 'Registrar Vehículo'}
+                                </h3>
+                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">
+                                    {editingId ? 'Actualización de activos' : 'Configuración inicial de activos'}
+                                </p>
+                            </div>
+                            <button onClick={() => { setIsModalOpen(false); setEditingId(null); }} className="p-3 text-slate-400 hover:bg-slate-50 rounded-full transition-all"><X size={24} /></button>
                         </div>
-                        <form onSubmit={handleAddVehicle} className="p-8 max-h-[80vh] overflow-y-auto">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-                                <div className="space-y-4">
-                                    <h5 className="font-bold text-slate-900 border-b pb-2 flex items-center gap-2">
-                                        <Car size={18} className="text-blue-600" /> Datos Generales
+                        <form onSubmit={handleAddVehicle} className="p-10 max-h-[85vh] overflow-y-auto custom-scrollbar">
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 mb-10">
+                                {/* Section 1: Basic Info */}
+                                <div className="lg:col-span-4 space-y-8">
+                                    <h5 className="font-black text-slate-900 border-b pb-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-blue-600 italic">
+                                        <Car size={16} /> Identificación
                                     </h5>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nombre</label>
-                                        <input type="text" required className="input-field" value={newVehicle.name} onChange={e => setNewVehicle({ ...newVehicle, name: e.target.value })} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Placa</label>
-                                        <input type="text" required className="input-field" value={newVehicle.plate} onChange={e => setNewVehicle({ ...newVehicle, plate: e.target.value })} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">KM Actual</label>
-                                        <input type="number" required className="input-field" value={newVehicle.currentMileage} onChange={e => setNewVehicle({ ...newVehicle, currentMileage: e.target.value })} />
+
+                                    <div className="space-y-6">
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2 mb-2 block flex items-center gap-1.5">Nombre del Vehículo</label>
+                                            <div className="relative group">
+                                                <Car className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 transition-colors" size={20} />
+                                                <input
+                                                    type="text" required placeholder="Ej: Toyota Hilux"
+                                                    className="input-field !py-5 !pl-12 !bg-slate-50/50 !border-slate-100 focus:!bg-white focus:!border-blue-500 font-bold"
+                                                    value={newVehicle.name} onChange={e => setNewVehicle({ ...newVehicle, name: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2 mb-2 block">Número de Placa</label>
+                                            <div className="relative group">
+                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 font-black text-xs">ID</div>
+                                                <input
+                                                    type="text" required placeholder="P-000XXX"
+                                                    className="input-field !py-5 !pl-12 !bg-slate-50/50 !border-slate-100 focus:!bg-white focus:!border-blue-500 font-black uppercase"
+                                                    value={newVehicle.plate} onChange={e => setNewVehicle({ ...newVehicle, plate: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2 mb-2 block">Kilometraje Actual del Tablero</label>
+                                            <div className="relative group">
+                                                <Gauge className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 transition-colors" size={20} />
+                                                <input
+                                                    type="number" required placeholder="Ingresa lo que marca tu moto/carro"
+                                                    className="input-field !py-5 !pl-12 !bg-slate-50/50 !border-slate-100 focus:!bg-white focus:!border-blue-500 font-black"
+                                                    value={newVehicle.currentMileage} onChange={e => setNewVehicle({ ...newVehicle, currentMileage: e.target.value })}
+                                                />
+                                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 uppercase">KM</span>
+                                            </div>
+                                            <p className="text-[9px] text-slate-400 mt-2 italic px-2">Este valor se compara con el último mantenimiento para avisarte cuando toca el próximo.</p>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="md:col-span-2 space-y-4">
-                                    <h5 className="font-bold text-slate-900 border-b pb-2 flex items-center gap-2 justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Settings size={18} className="text-blue-600" /> Mantenimientos y Costos
-                                        </div>
+                                {/* Section 2: Maintenance Parameters */}
+                                <div className="lg:col-span-8 space-y-8">
+                                    <div className="flex items-center justify-between border-b pb-4">
+                                        <h5 className="font-black text-slate-900 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-emerald-600 italic">
+                                            <Settings size={16} /> Parámetros de Mantenimiento
+                                        </h5>
                                         <button
                                             type="button"
                                             onClick={() => setNewVehicle({ ...newVehicle, maintenanceItems: [...newVehicle.maintenanceItems, { id: Date.now(), label: '', lastMileage: '', interval: '', estimatedCost: 0 }] })}
-                                            className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-md hover:bg-blue-100 font-bold"
+                                            className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-4 py-2 rounded-full hover:bg-emerald-600 hover:text-white transition-all uppercase tracking-widest flex items-center gap-2 shadow-sm"
                                         >
-                                            + AÑADIR PARÁMETRO
+                                            <Plus size={14} /> Nuevo Parámetro
                                         </button>
-                                    </h5>
+                                    </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar p-2">
                                         {newVehicle.maintenanceItems.map((item, index) => (
-                                            <div key={item.id} className="p-4 bg-slate-50 rounded-xl space-y-3 relative group border border-slate-100">
+                                            <div key={item.id} className="p-6 bg-slate-50 border border-slate-100 rounded-[2rem] space-y-5 relative group hover:border-emerald-200 hover:bg-white transition-all hover:shadow-xl hover:shadow-emerald-50/50">
                                                 <button
                                                     type="button"
                                                     onClick={() => setNewVehicle({ ...newVehicle, maintenanceItems: newVehicle.maintenanceItems.filter(i => i.id !== item.id) })}
-                                                    className="absolute top-2 right-2 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 transition-all p-2 hover:bg-rose-50 rounded-full"
                                                 >
-                                                    <X size={14} />
+                                                    <X size={16} />
                                                 </button>
+
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">Nombre</label>
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Descripción</label>
+                                                    <div className="relative">
+                                                        <Settings className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                                                        <input
+                                                            type="text" required className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-9 pr-4 text-xs font-bold focus:ring-4 focus:ring-emerald-50 focus:border-emerald-500 outline-none transition-all"
+                                                            placeholder="Nombre mantenimiento..."
+                                                            value={item.label}
+                                                            onChange={e => {
+                                                                const newItems = [...newVehicle.maintenanceItems];
+                                                                newItems[index].label = e.target.value;
+                                                                setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Kilometraje de Alerta</label>
+                                                        <div className="relative">
+                                                            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14} />
+                                                            <input
+                                                                type="number" required className="w-full bg-white border border-slate-200 rounded-xl py-3 pl-9 pr-4 text-xs font-black focus:ring-4 focus:ring-emerald-50 focus:border-emerald-500 outline-none transition-all"
+                                                                value={item.interval}
+                                                                onChange={e => {
+                                                                    const newItems = [...newVehicle.maintenanceItems];
+                                                                    newItems[index].interval = e.target.value;
+                                                                    setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Presupuesto Est.</label>
+                                                        <div className="relative">
+                                                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500" size={14} />
+                                                            <input
+                                                                type="number" step="0.01" required className="w-full bg-white border border-emerald-100 rounded-xl py-3 pl-9 pr-4 text-xs font-black text-emerald-700 focus:ring-4 focus:ring-emerald-50 focus:border-emerald-500 outline-none transition-all"
+                                                                value={item.estimatedCost}
+                                                                onChange={e => {
+                                                                    const newItems = [...newVehicle.maintenanceItems];
+                                                                    newItems[index].estimatedCost = e.target.value;
+                                                                    setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="pt-2">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block italic opacity-80">KM del ÚLTIMO mantenimiento realizado</label>
                                                     <input
-                                                        type="text" required className="input-field !py-1.5" placeholder="Ej. Llantas"
-                                                        value={item.label}
+                                                        type="number" required className="w-full bg-white border border-slate-200 rounded-xl py-2 px-4 text-[10px] font-black focus:ring-4 focus:ring-blue-50 outline-none transition-all"
+                                                        placeholder="Ej: Si lo cambiaste a los 230000..."
+                                                        value={item.lastMileage}
                                                         onChange={e => {
                                                             const newItems = [...newVehicle.maintenanceItems];
-                                                            newItems[index].label = e.target.value;
+                                                            newItems[index].lastMileage = e.target.value;
                                                             setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
                                                         }}
                                                     />
-                                                </div>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    <div>
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">Último KM</label>
-                                                        <input
-                                                            type="number" required className="input-field !py-1.5"
-                                                            value={item.lastMileage}
-                                                            onChange={e => {
-                                                                const newItems = [...newVehicle.maintenanceItems];
-                                                                newItems[index].lastMileage = e.target.value;
-                                                                setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">Frecuencia</label>
-                                                        <input
-                                                            type="number" required className="input-field !py-1.5"
-                                                            value={item.interval}
-                                                            onChange={e => {
-                                                                const newItems = [...newVehicle.maintenanceItems];
-                                                                newItems[index].interval = e.target.value;
-                                                                setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">Costo Est.</label>
-                                                        <input
-                                                            type="number" step="0.01" required className="input-field !py-1.5 border-emerald-100 focus:border-emerald-500"
-                                                            value={item.estimatedCost}
-                                                            onChange={e => {
-                                                                const newItems = [...newVehicle.maintenanceItems];
-                                                                newItems[index].estimatedCost = e.target.value;
-                                                                setNewVehicle({ ...newVehicle, maintenanceItems: newItems });
-                                                            }}
-                                                        />
-                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -346,9 +450,11 @@ const Vehicles = ({ vehicles, setVehicles }) => {
                                 </div>
                             </div>
 
-                            <div className="flex gap-4 border-t pt-8">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
-                                <button type="submit" className="flex-1 btn-primary !py-3 shadow-lg shadow-blue-200">Guardar Vehículo</button>
+                            <div className="flex gap-6 border-t border-slate-100 pt-10">
+                                <button type="button" onClick={() => { setIsModalOpen(false); setEditingId(null); }} className="flex-1 py-5 font-black text-slate-400 uppercase tracking-[0.2em] text-[10px] hover:bg-slate-50 rounded-[1.5rem] transition-all italic">Cancelar Registro</button>
+                                <button type="submit" className="flex-[2] bg-slate-900 text-white py-5 text-sm font-black rounded-[2rem] shadow-2xl shadow-slate-200 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-[0.2em] italic">
+                                    {editingId ? 'Guardar Cambios' : 'Guardar Activo Vehicular'}
+                                </button>
                             </div>
                         </form>
                     </div>

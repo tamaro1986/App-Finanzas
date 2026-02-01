@@ -1,14 +1,17 @@
 // ============================================================================
 // IMPORTS: React, iconos, animaciones y categorías
 // ============================================================================
-import React, { useState, useEffect, useMemo } from 'react'
-import { Plus, Copy, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
 import { DEFAULT_CATEGORIES } from '../constants/categories'
 // Importar funciones de sincronización con Supabase
 import { initializeData, saveToSupabase } from '../lib/supabaseSync'
+import { useSyncNotifications } from './SyncNotification'
+import IconPicker, { AVAILABLE_ICONS } from './IconPicker'
+import CategoryReport from './CategoryReport'
 
 const ExecutionChart = ({ data }) => {
     const maxVal = Math.max(...data.map(d => Math.max(d.budgeted, d.executed)), 100)
@@ -62,41 +65,123 @@ const ExecutionChart = ({ data }) => {
 // CONECTADO A: Supabase tabla 'budgets'
 // ============================================================================
 const BudgetModule = ({ budgets, setBudgets, transactions }) => {
+    const { addNotification } = useSyncNotifications()
     const [activeTab, setActiveTab] = useState('config') // 'config' or 'analysis'
     const [currentPeriod, setCurrentPeriod] = useState(format(new Date(), 'yyyy-MM'))
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All')
     const [isModalOpen, setIsModalOpen] = useState(false)
-    const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense' })
+    const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄' })
 
     // Initialize with default categories if empty for the current period
-    // Solo lo hacemos si budgets ya no es null (ya se cargó de App.jsx)
+    // Si no hay presupuesto para el mes actual, copiar automáticamente del mes anterior
     useEffect(() => {
         if (budgets && !budgets[currentPeriod]) {
-            const defaults = [
-                ...DEFAULT_CATEGORIES.income.map(c => ({ id: c.id, name: c.name, projected: 0, actual: 0, type: 'income' })),
-                ...DEFAULT_CATEGORIES.expense.map(c => ({ id: c.id, name: c.name, projected: 0, actual: 0, type: 'expense' }))
-            ];
-            setBudgets(prev => ({
-                ...prev,
-                [currentPeriod]: defaults
-            }));
+            // Intentar copiar del mes anterior
+            const prevPeriod = format(subMonths(parseISO(`${currentPeriod}-01`), 1), 'yyyy-MM')
+            const prevBudgets = budgets[prevPeriod]
+
+            if (prevBudgets && prevBudgets.length > 0) {
+                // ✅ Copiar automáticamente del mes anterior
+                const clonedBudgets = prevBudgets.map(b => ({
+                    ...b,
+                    id: crypto.randomUUID(),
+                    actual: 0
+                }))
+
+                setBudgets(prev => ({
+                    ...prev,
+                    [currentPeriod]: clonedBudgets
+                }))
+
+                const monthName = format(parseISO(`${currentPeriod}-01`), 'MMMM yyyy', { locale: es })
+                addNotification(`✅ Presupuesto de ${monthName} creado automáticamente`, 'success')
+            } else {
+                // Si no hay mes anterior, usar categorías por defecto
+                const defaults = [
+                    ...DEFAULT_CATEGORIES.income.map(c => ({ id: c.id, name: c.name, icon: c.icon, projected: 0, actual: 0, type: 'income' })),
+                    ...DEFAULT_CATEGORIES.expense.map(c => ({ id: c.id, name: c.name, icon: c.icon, projected: 0, actual: 0, type: 'expense' }))
+                ]
+                setBudgets(prev => ({
+                    ...prev,
+                    [currentPeriod]: defaults
+                }))
+            }
         }
-    }, [currentPeriod, budgets, setBudgets]);
+    }, [currentPeriod, budgets, setBudgets])
 
     // ============================================================================
-    // EFFECT: Sincronizar presupuestos con Supabase y localStorage
+    // EFFECT: Auto-asignar iconos a categorías existentes que no tengan uno
     // ============================================================================
     useEffect(() => {
+        if (!budgets || Object.keys(budgets).length === 0) return
+
+        let hasChanged = false
+        const updatedBudgets = { ...budgets }
+
+        // Función para encontrar el mejor icono basado en el nombre
+        const getBestIcon = (name, type) => {
+            const allDefaults = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
+            const match = allDefaults.find(c => c.name.toLowerCase() === name.toLowerCase())
+            if (match) return match.icon
+            return type === 'income' ? '💰' : '📄'
+        }
+
+        Object.keys(updatedBudgets).forEach(period => {
+            const periodBudgets = updatedBudgets[period]
+            if (Array.isArray(periodBudgets)) {
+                const updatedPeriodBudgets = periodBudgets.map(cat => {
+                    if (!cat.icon) {
+                        hasChanged = true
+                        return { ...cat, icon: getBestIcon(cat.name, cat.type) }
+                    }
+                    return cat
+                })
+                updatedBudgets[period] = updatedPeriodBudgets
+            }
+        })
+
+        if (hasChanged) {
+            console.log('🔄 Auto-asignando iconos a categorías existentes...')
+            setBudgets(updatedBudgets)
+        }
+    }, [])
+
+    // Flag para evitar el primer guardado (que suele estar vacío antes de cargar datos)
+    const isFirstRun = useRef(true)
+
+    useEffect(() => {
         const syncBudgets = async () => {
-            // Guardar en localStorage
+            // Freno de Seguridad: No guardar si es la ejecución inicial de carga
+            if (isFirstRun.current) {
+                isFirstRun.current = false
+                return
+            }
+
+            // 1. Guardar copia local completa
             localStorage.setItem('finanzas_budgets', JSON.stringify(budgets))
-            // Sincronizar con Supabase
-            if (Object.keys(budgets).length > 0) {
-                await saveToSupabase('budgets', 'finanzas_budgets', budgets, [budgets])
+
+            // 2. Sincronizar el periodo actual con Supabase
+            // Solo guardamos si el objeto budgets no está vacío
+            if (Object.keys(budgets).length > 0 && budgets[currentPeriod] && budgets[currentPeriod].length > 0) {
+                const budgetRow = {
+                    month: currentPeriod,
+                    categories: budgets[currentPeriod]
+                }
+
+                const result = await saveToSupabase('budgets', 'finanzas_budgets', budgetRow, budgets)
+
+                if (result && !result.savedToCloud) {
+                    addNotification(`Presupuesto de ${currentPeriod} guardado localmente.`, 'warning')
+                } else if (result && result.savedToCloud) {
+                    // Solo notificar si no es la carga inicial silenciosa
+                    if (!isFirstRun.current) {
+                        addNotification(`Presupuesto de ${currentPeriod} sincronizado.`, 'success')
+                    }
+                }
             }
         }
         syncBudgets()
-    }, [budgets])
+    }, [budgets, currentPeriod])
 
     const currentMonthBudgets = budgets[currentPeriod] || []
 
@@ -115,6 +200,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             name: newCategory.name,
             projected: parseFloat(newCategory.amount),
             type: newCategory.type,
+            icon: newCategory.icon || (newCategory.type === 'income' ? '💰' : '📄'),
             actual: 0
         }
 
@@ -125,7 +211,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         }))
 
         // Resetear formulario
-        setNewCategory({ name: '', amount: '', type: 'expense' })
+        setNewCategory({ name: '', amount: '', type: 'expense', icon: '📄' })
         setIsModalOpen(false)
     }
 
@@ -144,35 +230,65 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
 
     // ============================================================================
     // FUNCIÓN: clonePreviousBudget
-    // PROPÓSITO: Clonar presupuesto del mes anterior al mes actual
+    // PROPÓSITO: Copiar categorías y montos del mes anterior al mes actual
     // SINCRONIZA: Con Supabase automáticamente via useEffect
     // ============================================================================
     const clonePreviousBudget = () => {
         const prevPeriod = format(subMonths(parseISO(`${currentPeriod}-01`), 1), 'yyyy-MM')
+        const prevMonthName = format(parseISO(`${prevPeriod}-01`), 'MMMM yyyy', { locale: es })
+        const currentMonthName = format(parseISO(`${currentPeriod}-01`), 'MMMM yyyy', { locale: es })
         const prevBudgets = budgets[prevPeriod]
 
+        // Verificar si existe presupuesto del mes anterior
         if (!prevBudgets || prevBudgets.length === 0) {
-            alert('No se encontró un presupuesto para el mes anterior.')
+            alert(`❌ No hay presupuesto guardado para ${prevMonthName}.\n\nPrimero debes crear un presupuesto para ese mes.`)
             return
         }
 
-        if (currentMonthBudgets.length > 0 && !confirm('¿Deseas sobreescribir el presupuesto actual con el del mes anterior?')) {
+        // Contar categorías del mes anterior
+        const categoryCount = prevBudgets.length
+        const totalAmount = prevBudgets.reduce((sum, b) => sum + (b.projected || 0), 0)
+
+        // Mensaje de confirmación más claro
+        let confirmMessage = `📋 Copiar presupuesto de ${prevMonthName}\n\n`
+        confirmMessage += `Se copiarán ${categoryCount} categorías con un total de $${totalAmount.toLocaleString()} USD\n\n`
+
+        if (currentMonthBudgets.length > 0) {
+            confirmMessage += `⚠️ ATENCIÓN: Ya tienes ${currentMonthBudgets.length} categorías en ${currentMonthName}.\nEstas serán REEMPLAZADAS por las de ${prevMonthName}.\n\n`
+        } else {
+            confirmMessage += `✅ Se crearán estas categorías para ${currentMonthName}\n\n`
+        }
+
+        confirmMessage += `¿Deseas continuar?`
+
+        if (!confirm(confirmMessage)) {
             return
         }
 
-        // Clonar presupuestos con nuevos IDs
-        const clonedBudgets = prevBudgets.map(b => ({ ...b, id: crypto.randomUUID(), actual: 0 }))
+        // Clonar presupuestos con nuevos IDs y resetear valores actuales
+        const clonedBudgets = prevBudgets.map(b => ({
+            ...b,
+            id: crypto.randomUUID(),
+            actual: 0
+        }))
+
         setBudgets(prev => ({
             ...prev,
             [currentPeriod]: clonedBudgets
         }))
+
+        // Notificación de éxito
+        alert(`✅ ¡Listo! Se copiaron ${categoryCount} categorías de ${prevMonthName} a ${currentMonthName}`)
     }
 
     // Unique category names for filtering
     const allCategoryNames = useMemo(() => {
         const names = new Set()
         Object.values(budgets).forEach(cats => {
-            cats.filter(c => c.type === 'expense').forEach(c => names.add(c.name))
+            // Validar que cats sea un array antes de usar .filter()
+            if (Array.isArray(cats)) {
+                cats.filter(c => c.type === 'expense').forEach(c => names.add(c.name))
+            }
         })
         return Array.from(names).sort()
     }, [budgets])
@@ -188,22 +304,29 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
             if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
 
-            categories.forEach(cat => {
-                if (cat.type === 'expense') {
-                    if (selectedCategoryFilter === 'All' || cat.name === selectedCategoryFilter) {
-                        monthlyStats[period].budgeted += cat.projected || 0
-                        yearlyStats[year].budgeted += cat.projected || 0
+            // Validar que categories sea un array antes de iterar
+            if (Array.isArray(categories)) {
+                categories.forEach(cat => {
+                    if (cat.type === 'expense') {
+                        if (selectedCategoryFilter === 'All' || cat.name === selectedCategoryFilter) {
+                            monthlyStats[period].budgeted += cat.projected || 0
+                            yearlyStats[year].budgeted += cat.projected || 0
+                        }
                     }
-                }
-            })
+                })
+            }
         })
 
-        // Process Transactions
+        // Process Transactions - Relacionar por categoryId
         transactions.forEach(t => {
             const period = t.date.substring(0, 7)
             const year = t.date.substring(0, 4)
             if (t.type === 'expense') {
-                if (selectedCategoryFilter === 'All' || t.category === selectedCategoryFilter) {
+                // Buscar la categoría en DEFAULT_CATEGORIES usando categoryId
+                const category = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                const categoryName = category?.name || 'Otros'
+
+                if (selectedCategoryFilter === 'All' || categoryName === selectedCategoryFilter) {
                     if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
                     if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
                     monthlyStats[period].executed += t.amount
@@ -216,11 +339,15 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     }, [budgets, transactions, selectedCategoryFilter])
 
     const sortedPeriods = Object.keys(stats.monthlyStats).sort().reverse()
-    const chartData = sortedPeriods.slice(0, 6).reverse().map(p => ({
-        label: format(parseISO(p + '-01'), 'MMM yy', { locale: es }),
-        budgeted: stats.monthlyStats[p].budgeted,
-        executed: stats.monthlyStats[p].executed
-    }))
+    const chartData = sortedPeriods
+        .filter(p => /^\d{4}-\d{2}$/.test(p)) // Filtrar solo períodos válidos (YYYY-MM)
+        .slice(0, 6)
+        .reverse()
+        .map(p => ({
+            label: format(parseISO(p + '-01'), 'MMM yy', { locale: es }),
+            budgeted: stats.monthlyStats[p].budgeted,
+            executed: stats.monthlyStats[p].executed
+        }))
 
     const totalProjected = currentMonthBudgets.reduce((sum, c) => sum + (c.type === 'expense' ? (c.projected || 0) : 0), 0)
     const totalExecuted = transactions
@@ -232,64 +359,70 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
                     <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Presupuesto</h2>
-                    <p className="text-slate-500 font-medium tracking-tight">Controla y optimiza tu salud financiera mes a mes.</p>
+                    <p className="text-slate-500 font-medium tracking-tight">
+                        Gestiona y analiza la ejecución de tu presupuesto mensual.
+                    </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl">
-                        <button
-                            onClick={() => setActiveTab('config')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'config' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            <LayoutGrid size={18} />
-                            <span>Configuración</span>
+                {activeTab === 'config' && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            type="month"
+                            value={currentPeriod}
+                            onChange={(e) => setCurrentPeriod(e.target.value)}
+                            className="input-field w-auto min-w-[150px] font-semibold text-slate-700 bg-white shadow-sm"
+                        />
+                        <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center gap-2">
+                            <Plus size={18} />
+                            <span className="hidden sm:inline">Nueva Categoría</span>
                         </button>
-                        <button
-                            onClick={() => setActiveTab('analysis')}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'analysis' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            <BarChart3 size={18} />
-                            <span>Análisis</span>
+                        <button onClick={clonePreviousBudget} className="btn-secondary flex items-center gap-2">
+                            <Plus size={18} />
+                            <span className="hidden sm:inline">Clonar Anterior</span>
                         </button>
                     </div>
-
-                    {activeTab === 'config' && (
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="month"
-                                value={currentPeriod}
-                                onChange={(e) => setCurrentPeriod(e.target.value)}
-                                className="input-field w-auto min-w-[150px] font-semibold text-slate-700 bg-white"
-                            />
-                            <button onClick={clonePreviousBudget} className="btn-secondary !p-3" title="Clonar Anterior">
-                                <Copy size={18} />
-                            </button>
-                            <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center gap-2">
-                                <Plus size={18} />
-                                <span className="hidden sm:inline">Nueva Categoría</span>
-                            </button>
-                        </div>
-                    )}
-                </div>
+                )}
             </header>
 
+            {/* Navigation Tabs */}
+            <div className="flex border-b border-slate-100 mb-8 overflow-x-auto no-scrollbar">
+                <button
+                    onClick={() => setActiveTab('config')}
+                    className={`px-8 py-4 font-black flex items-center gap-3 transition-all min-w-fit border-b-4 ${activeTab === 'config' ? 'border-blue-600 text-blue-600 bg-blue-50/10' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                >
+                    <LayoutGrid size={20} /> <span className="uppercase tracking-widest text-[10px]">Configuración</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('analysis')}
+                    className={`px-8 py-4 font-black flex items-center gap-3 transition-all min-w-fit border-b-4 ${activeTab === 'analysis' ? 'border-blue-600 text-blue-600 bg-blue-50/10' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                >
+                    <BarChart3 size={20} /> <span className="uppercase tracking-widest text-[10px]">Análisis Visual</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('report')}
+                    className={`px-8 py-4 font-black flex items-center gap-3 transition-all min-w-fit border-b-4 ${activeTab === 'report' ? 'border-blue-600 text-blue-600 bg-blue-50/10' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                >
+                    <FileText size={20} /> <span className="uppercase tracking-widest text-[10px]">Reporte Detallado</span>
+                </button>
+            </div>
+
             {activeTab === 'config' ? (
-                <>
+                <div className="space-y-8 animate-in fade-in duration-500">
                     {/* Summary Stats */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="card border-none shadow-sm bg-gradient-to-br from-blue-600 to-blue-700 text-white group overflow-hidden relative">
                             <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
                             <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">Límite de Gastos</p>
                             <div className="flex items-baseline gap-1 relative z-10">
                                 <span className="text-3xl font-black">${totalProjected.toLocaleString()}</span>
-                                <span className="text-[10px] font-bold text-blue-200">MXN</span>
+                                <span className="text-[10px] font-bold text-blue-200">USD</span>
                             </div>
                         </div>
                         <div className="card border-none shadow-sm bg-white">
                             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Gasto Real</p>
                             <div className="flex items-baseline gap-1">
                                 <span className="text-3xl font-black text-slate-900">${totalExecuted.toLocaleString()}</span>
-                                <span className="text-[10px] font-bold text-slate-400">MXN</span>
+                                <span className="text-[10px] font-bold text-slate-400">USD</span>
                             </div>
                         </div>
                         <div className="card border-none shadow-sm bg-white flex items-center justify-between pr-8">
@@ -306,65 +439,106 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                     </div>
 
                     {/* Categories Table */}
-                    <div className="card !p-0 overflow-hidden shadow-xl border-slate-200/40">
+                    <div className="card !p-0 overflow-hidden shadow-xl border-slate-200/40 bg-white">
                         <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
                                 <LayoutGrid size={18} className="text-slate-400" /> Catálogo Mensual
                             </h3>
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{format(parseISO(currentPeriod + '-01'), 'MMMM yyyy', { locale: es })}</span>
                         </div>
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="bg-slate-50/30">
-                                    <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tipo / Categoría</th>
-                                    <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Monto Proyectado</th>
-                                    <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {currentMonthBudgets.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="3" className="px-8 py-20 text-center text-slate-400 italic font-medium">No has definido categorías para este periodo.</td>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left font-sans">
+                                <thead>
+                                    <tr className="bg-slate-50/30">
+                                        <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tipo / Categoría</th>
+                                        <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Monto Proyectado</th>
+                                        <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Monto Ejecutado</th>
+                                        <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Acciones</th>
                                     </tr>
-                                ) : (
-                                    currentMonthBudgets.map((cat) => (
-                                        <tr key={cat.id} className="group hover:bg-slate-50/80 transition-all">
-                                            <td className="px-8 py-5">
-                                                <div className="flex items-center gap-4">
-                                                    <div className={`w-2 h-2 rounded-full ${cat.type === 'income' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                                                    <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <span className="text-slate-400 text-xs font-bold">$</span>
-                                                    <input
-                                                        type="number"
-                                                        value={cat.projected}
-                                                        onChange={(e) => {
-                                                            const val = parseFloat(e.target.value) || 0;
-                                                            setBudgets(prev => ({
-                                                                ...prev,
-                                                                [currentPeriod]: prev[currentPeriod].map(c => c.id === cat.id ? { ...c, projected: val } : c)
-                                                            }));
-                                                        }}
-                                                        className="w-24 text-right font-black text-slate-900 bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none transition-all py-1 px-2"
-                                                    />
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-5 text-right">
-                                                <button onClick={() => handleDeleteCategory(cat.id)} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-rose-100">
-                                                    <Trash2 size={18} />
-                                                </button>
-                                            </td>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {currentMonthBudgets.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="4" className="px-8 py-20 text-center text-slate-400 italic font-medium">No has definido categorías para este periodo.</td>
                                         </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                                    ) : (
+                                        currentMonthBudgets.map((cat) => (
+                                            <tr key={cat.id} className="group hover:bg-slate-50/80 transition-all">
+                                                <td className="px-8 py-5">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xl bg-slate-50 border border-slate-100 shadow-sm transition-transform group-hover:scale-110`}>
+                                                            {cat.icon || (cat.type === 'income' ? '💰' : '📄')}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
+                                                            <span className={`text-[10px] font-bold uppercase tracking-widest ${cat.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                {cat.type === 'income' ? 'Ingreso' : 'Gasto'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <span className="text-slate-400 text-xs font-bold">$</span>
+                                                        <input
+                                                            type="number"
+                                                            value={cat.projected}
+                                                            onChange={(e) => {
+                                                                const val = parseFloat(e.target.value) || 0;
+                                                                setBudgets(prev => ({
+                                                                    ...prev,
+                                                                    [currentPeriod]: prev[currentPeriod].map(c => c.id === cat.id ? { ...c, projected: val } : c)
+                                                                }));
+                                                            }}
+                                                            className="w-24 text-right font-black text-slate-900 bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none transition-all py-1 px-2"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    {(() => {
+                                                        const executed = transactions
+                                                            .filter(t => {
+                                                                if (!t.date.startsWith(currentPeriod)) return false
+                                                                if (t.type !== cat.type) return false
+                                                                const txCategory = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                                                                return txCategory?.name === cat.name || t.categoryId === cat.id
+                                                            })
+                                                            .reduce((sum, t) => sum + t.amount, 0)
+
+                                                        const percentage = cat.projected > 0 ? (executed / cat.projected * 100) : 0
+                                                        const isOverBudget = executed > cat.projected && cat.projected > 0
+
+                                                        return (
+                                                            <div className="flex flex-col items-end gap-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-slate-400 text-xs font-bold">$</span>
+                                                                    <span className={`font-black text-sm ${isOverBudget ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                                        {executed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                    </span>
+                                                                </div>
+                                                                {cat.projected > 0 && (
+                                                                    <span className={`text-[10px] font-bold ${isOverBudget ? 'text-rose-500' : 'text-slate-400'}`}>
+                                                                        {percentage.toFixed(0)}%
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )
+                                                    })()}
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <button onClick={() => handleDeleteCategory(cat.id)} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-rose-100">
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </>
-            ) : (
+                </div>
+            ) : activeTab === 'analysis' ? (
                 <div className="space-y-8 animate-in slide-in-from-bottom-6 duration-700">
                     <div className="flex flex-col lg:flex-row gap-8">
                         {/* Interactive Analysis Sidebar */}
@@ -433,7 +607,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                     <Calendar size={18} className="text-slate-400" />
                                     <h4 className="font-black text-slate-800 tracking-tight italic uppercase text-sm">Desglose de Ejecución Mensual</h4>
                                 </div>
-                                <table className="w-full text-left">
+                                <table className="w-full text-left font-sans">
                                     <thead>
                                         <tr className="bg-slate-50/50">
                                             <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mes</th>
@@ -446,25 +620,28 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                         {sortedPeriods.length === 0 ? (
                                             <tr><td colSpan="4" className="px-8 py-10 text-center text-slate-400 italic">No hay historial disponible.</td></tr>
                                         ) : (
-                                            sortedPeriods.slice(0, 12).map(period => {
-                                                const s = stats.monthlyStats[period]
-                                                const diff = s.budgeted - s.executed
-                                                return (
-                                                    <tr key={period} className="hover:bg-blue-50/30 transition-colors">
-                                                        <td className="px-8 py-5 font-black text-slate-800 capitalize italic">
-                                                            {format(parseISO(period + '-01'), 'MMMM yyyy', { locale: es })}
-                                                        </td>
-                                                        <td className="px-8 py-5 text-right font-bold text-slate-500">${s.budgeted.toLocaleString()}</td>
-                                                        <td className="px-8 py-5 text-right font-black text-slate-900">${s.executed.toLocaleString()}</td>
-                                                        <td className={`px-8 py-5 text-right font-black ${diff >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                            <div className="flex items-center justify-end gap-1">
-                                                                {diff >= 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
-                                                                ${Math.abs(diff).toLocaleString()}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })
+                                            sortedPeriods
+                                                .filter(p => /^\d{4}-\d{2}$/.test(p)) // Filtrar solo períodos válidos
+                                                .slice(0, 12)
+                                                .map(period => {
+                                                    const s = stats.monthlyStats[period]
+                                                    const diff = s.budgeted - s.executed
+                                                    return (
+                                                        <tr key={period} className="hover:bg-blue-50/30 transition-colors">
+                                                            <td className="px-8 py-5 font-black text-slate-800 capitalize italic">
+                                                                {format(parseISO(period + '-01'), 'MMMM yyyy', { locale: es })}
+                                                            </td>
+                                                            <td className="px-8 py-5 text-right font-bold text-slate-500">${s.budgeted.toLocaleString()}</td>
+                                                            <td className="px-8 py-5 text-right font-black text-slate-900">${s.executed.toLocaleString()}</td>
+                                                            <td className={`px-8 py-5 text-right font-black ${diff >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    {diff >= 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}
+                                                                    ${Math.abs(diff).toLocaleString()}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })
                                         )}
                                     </tbody>
                                 </table>
@@ -472,6 +649,12 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                         </div>
                     </div>
                 </div>
+            ) : (
+                <CategoryReport
+                    budgets={budgets}
+                    currentPeriod={currentPeriod}
+                    transactions={transactions}
+                />
             )}
 
             {/* Modal Nueva Categoría */}
@@ -492,29 +675,61 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                             className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
                         >
                             <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between">
-                                <h3 className="text-2xl font-black text-slate-900 italic tracking-tight">Nueva Categoría</h3>
+                                <h3 className="text-2xl font-black text-slate-900 italic tracking-tight uppercase">Nueva Categoría</h3>
                                 <button onClick={() => setIsModalOpen(false)} className="p-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-2xl transition-all">
                                     <X size={24} />
                                 </button>
                             </div>
+
                             <form onSubmit={handleAddCategory} className="p-10 space-y-8">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <button type="button" onClick={() => setNewCategory({ ...newCategory, type: 'income' })} className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'income' ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}>Ingreso</button>
-                                    <button type="button" onClick={() => setNewCategory({ ...newCategory, type: 'expense' })} className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'expense' ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}>Gasto</button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewCategory({ ...newCategory, type: 'income' })}
+                                        className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'income' ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    >
+                                        Ingreso
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewCategory({ ...newCategory, type: 'expense' })}
+                                        className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'expense' ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    >
+                                        Gasto
+                                    </button>
                                 </div>
+
                                 <div className="space-y-6">
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Descripción</label>
                                         <input type="text" autoFocus required placeholder="Ej: Supermercado, Renta..." className="input-field !text-lg !font-bold" value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} />
                                     </div>
                                     <div className="space-y-2">
+                                        <IconPicker
+                                            selectedIcon={newCategory.icon}
+                                            onSelectIcon={(icon) => setNewCategory({ ...newCategory, icon })}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
                                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Meta Mensual ($)</label>
                                         <input type="number" required placeholder="0.00" className="input-field !text-3xl !font-black !py-4" value={newCategory.amount} onChange={(e) => setNewCategory({ ...newCategory, amount: e.target.value })} />
                                     </div>
                                 </div>
+
                                 <div className="flex gap-4 pt-4">
-                                    <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-2xl transition-all">Cancelar</button>
-                                    <button type="submit" className="flex-1 btn-primary !py-4 !text-base shadow-xl shadow-blue-200">Guardar</button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsModalOpen(false)}
+                                        className="flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-2xl transition-all"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 btn-primary !py-4 !text-base shadow-xl shadow-blue-200"
+                                    >
+                                        Guardar
+                                    </button>
                                 </div>
                             </form>
                         </motion.div>

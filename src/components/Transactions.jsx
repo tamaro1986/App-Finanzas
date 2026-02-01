@@ -2,33 +2,94 @@
 // IMPORTS: React, iconos, utilidades y funciones de sincronización
 // ============================================================================
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X, FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X, FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle, Edit2, Shield, History } from 'lucide-react'
 import { format, parse, isValid } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { DEFAULT_CATEGORIES } from '../constants/categories'
+import { DEFAULT_CATEGORIES, TRANSFER_CATEGORY } from '../constants/categories'
 import * as XLSX from 'xlsx' // Importar librería para Excel
 // Importar funciones de sincronización con Supabase
-import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
+import { initializeData, saveToSupabase, deleteFromSupabase, syncToSupabase } from '../lib/supabaseSync'
 // Importar sistema de notificaciones
 import { useSyncNotifications } from './SyncNotification'
+// Importar sistema de respaldo automático
+import { createBackup } from '../utils/backup'
+import BackupManager from './BackupManager'
+import ImportHistoryManager from './ImportHistoryManager'
 
 // ============================================================================
 // COMPONENTE: Transactions
 // PROPÓSITO: Gestionar transacciones (ingresos y gastos)
 // CONECTADO A: Supabase tablas 'transactions' y 'accounts'
 // ============================================================================
-const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) => {
+const Transactions = ({ transactions, setTransactions, accounts, setAccounts, budgets = {}, selectedAccountId, setSelectedAccountId }) => {
     // Hook de notificaciones
-    const { showNotification, NotificationContainer } = useSyncNotifications()
+    const { addNotification } = useSyncNotifications()
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+    const [isBackupModalOpen, setIsBackupModalOpen] = useState(false)
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [filterType, setFilterType] = useState('all')
+    const [editingTransaction, setEditingTransaction] = useState(null)
+    const [isInitialModalOpen, setIsInitialModalOpen] = useState(false)
+    const [tempInitialBalance, setTempInitialBalance] = useState('')
 
     // Estados para importación de Excel
     const [importErrors, setImportErrors] = useState([])
     const [importPreview, setImportPreview] = useState([])
     const [importSuccessCount, setImportSuccessCount] = useState(0)
+    const [importLogs, setImportLogs] = useState(() => {
+        const saved = localStorage.getItem('importLogs')
+        return saved ? JSON.parse(saved) : []
+    })
+
+    // Guardar logs en localStorage cuando cambien
+    useEffect(() => {
+        localStorage.setItem('importLogs', JSON.stringify(importLogs))
+    }, [importLogs])
+
+    // ============================================================================
+    // FUNCIÓN: Obtener categorías combinadas (predefinidas + personalizadas del presupuesto)
+    // ============================================================================
+    const getCombinedCategories = (type) => {
+        // Categorías predefinidas
+        const defaultCats = type === 'income' ? DEFAULT_CATEGORIES.income : DEFAULT_CATEGORIES.expense
+
+        // Obtener todas las categorías del presupuesto de todos los períodos
+        const allBudgetCategories = Object.values(budgets).flat().filter(cat => cat && cat.type === type)
+
+        // Usar un Map para evitar duplicados (clave: ID de categoría)
+        const categoryMap = new Map()
+
+        // 1. Primero agregar todas las categorías predefinidas
+        defaultCats.forEach(cat => {
+            categoryMap.set(cat.id, cat)
+        })
+
+        // 2. Luego agregar solo las categorías personalizadas que NO existen en las predefinidas
+        allBudgetCategories.forEach(cat => {
+            // Solo agregar si:
+            // - No existe ya en el Map (por ID)
+            // - No existe una categoría con el mismo nombre (case-insensitive)
+            const existsById = categoryMap.has(cat.id)
+            const existsByName = Array.from(categoryMap.values()).some(
+                existing => existing.name.toLowerCase() === cat.name.toLowerCase()
+            )
+
+            if (!existsById && !existsByName) {
+                categoryMap.set(cat.id, {
+                    id: cat.id,
+                    name: cat.name,
+                    icon: cat.icon || (type === 'income' ? '💰' : '📄'),
+                    color: type === 'income' ? '#2ecc71' : '#95a5a6'
+                })
+            }
+        })
+
+        // Convertir el Map a array
+        return Array.from(categoryMap.values())
+    }
 
     const [newTx, setNewTx] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
@@ -38,6 +99,15 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
         type: 'expense',
         note: '',
         attachment: null
+    })
+
+    // Estados para transferencias
+    const [transferData, setTransferData] = useState({
+        date: format(new Date(), 'yyyy-MM-dd'),
+        fromAccountId: '',
+        toAccountId: '',
+        amount: '',
+        note: ''
     })
 
     const compressImage = (file) => {
@@ -99,6 +169,12 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
     // ============================================================================
     const handleAddTransaction = async (e) => {
         e.preventDefault()
+
+        // Si es transferencia, usar el handler específico
+        if (newTx.type === 'transfer') {
+            return await handleAddTransfer(e)
+        }
+
         // Validar que se haya seleccionado una cuenta
         if (!newTx.accountId) {
             alert('Por favor selecciona una cuenta.')
@@ -142,7 +218,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
 
             // Mostrar notificación si hay un error real
             if (txSaveResult.error) {
-                showNotification(
+                addNotification(
                     `⚠️ La transacción se guardó solo en este dispositivo. ${txSaveResult.error}. Verifica tu conexión a internet.`,
                     'warning',
                     7000
@@ -177,6 +253,246 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                 console.warn('⚠️ Cuenta actualizada solo localmente:', accSaveResult.message || accSaveResult.error)
             }
         }
+
+        // 🔒 Crear respaldo automático de transacciones
+        createBackup('transactions', updatedTransactions)
+        createBackup('accounts', updatedAccounts)
+    }
+
+    // ============================================================================
+    // FUNCIÓN: handleEditTransaction
+    // PROPÓSITO: Editar transacción existente y ajustar balances de cuentas
+    // SINCRONIZA: Transacción actualizada y cuentas afectadas con Supabase
+    // ============================================================================
+    const handleEditTransaction = async (e) => {
+        e.preventDefault()
+        if (!editingTransaction) return
+
+        // Encontrar la transacción original
+        const originalTx = transactions.find(t => t.id === editingTransaction.id)
+        if (!originalTx) return
+
+        // Crear transacción actualizada
+        const updatedTx = {
+            ...editingTransaction,
+            amount: parseFloat(editingTransaction.amount)
+        }
+
+        // 1. Revertir el efecto de la transacción original en la cuenta original
+        let updatedAccounts = accounts.map(acc => {
+            if (acc.id === originalTx.accountId) {
+                let newBalance = acc.balance
+                if (acc.type === 'Préstamo') {
+                    newBalance = originalTx.type === 'income' ? acc.balance + originalTx.amount : acc.balance - originalTx.amount
+                } else {
+                    newBalance = originalTx.type === 'income' ? acc.balance - originalTx.amount : acc.balance + originalTx.amount
+                }
+                return { ...acc, balance: newBalance }
+            }
+            return acc
+        })
+
+        // 2. Aplicar el efecto de la transacción actualizada en la cuenta nueva (puede ser la misma)
+        updatedAccounts = updatedAccounts.map(acc => {
+            if (acc.id === updatedTx.accountId) {
+                let newBalance = acc.balance
+                if (acc.type === 'Préstamo') {
+                    newBalance = updatedTx.type === 'income' ? acc.balance - updatedTx.amount : acc.balance + updatedTx.amount
+                } else {
+                    newBalance = updatedTx.type === 'income' ? acc.balance + updatedTx.amount : acc.balance - updatedTx.amount
+                }
+                return { ...acc, balance: newBalance }
+            }
+            return acc
+        })
+
+        // 3. Actualizar la transacción en el array
+        const updatedTransactions = transactions.map(t => t.id === updatedTx.id ? updatedTx : t)
+        setTransactions(updatedTransactions)
+        setAccounts(updatedAccounts)
+
+        // 4. Sincronizar con Supabase
+        await saveToSupabase('transactions', 'finanzas_transactions', updatedTx, updatedTransactions)
+
+        // Sincronizar cuentas afectadas
+        const affectedAccountIds = new Set([originalTx.accountId, updatedTx.accountId])
+        for (const accountId of affectedAccountIds) {
+            const account = updatedAccounts.find(acc => acc.id === accountId)
+            if (account) {
+                await saveToSupabase('accounts', 'finanzas_accounts', account, updatedAccounts)
+            }
+        }
+
+        // Cerrar modal
+        setIsEditModalOpen(false)
+        setEditingTransaction(null)
+        addNotification('Transacción actualizada correctamente', 'success')
+
+        // 🔒 Crear respaldo automático
+        createBackup('transactions', updatedTransactions)
+        createBackup('accounts', updatedAccounts)
+    }
+
+    // ============================================================================
+    // FUNCIÓN: handleUpdateInitialBalance
+    // PROPÓSITO: Ajustar el saldo inicial de una cuenta y recalcular el actual
+    // ============================================================================
+    const handleUpdateInitialBalance = async (e) => {
+        if (e) e.preventDefault()
+        const newInitial = parseFloat(tempInitialBalance)
+        if (isNaN(newInitial)) {
+            addNotification('Monto inválido', 'error')
+            return
+        }
+
+        const account = accounts.find(a => a.id === selectedAccountId)
+        if (!account) return
+
+        // 1. Encontrar el saldo inicial actual calculado desde el historial disponible
+        const initialRow = transactionsWithRunningBalance.find(t => t.isInitialBalance)
+        if (!initialRow) return
+
+        const currentInitial = initialRow.runningBalance
+
+        // 2. Calcular el desplazamiento (shift)
+        const shift = newInitial - currentInitial
+
+        // 3. El saldo actual de la cuenta se ajusta por ese desplazamiento
+        const newBalance = account.balance + shift
+
+        const updatedAccounts = accounts.map(a =>
+            a.id === selectedAccountId ? { ...a, balance: newBalance } : a
+        )
+
+        setAccounts(updatedAccounts)
+        setIsInitialModalOpen(false)
+
+        // Sincronizar con Supabase
+        await saveToSupabase('accounts', 'finanzas_accounts', { ...account, balance: newBalance }, updatedAccounts)
+        addNotification('Saldo base ajustado correctamente', 'success')
+
+        // 🔒 Crear respaldo
+        createBackup('accounts', updatedAccounts)
+    }
+
+    const openInitialEditModal = (currentInitial) => {
+        setTempInitialBalance(currentInitial.toString())
+        setIsInitialModalOpen(true)
+    }
+
+    // ============================================================================
+    // FUNCIÓN: handleAddTransfer
+    // PROPÓSITO: Crear transferencia entre cuentas (2 transacciones vinculadas)
+    // ============================================================================
+    const handleAddTransfer = async (e) => {
+        if (e) e.preventDefault()
+
+        // Validaciones
+        if (!transferData.fromAccountId || !transferData.toAccountId) {
+            addNotification('Selecciona ambas cuentas', 'error')
+            return
+        }
+
+        if (transferData.fromAccountId === transferData.toAccountId) {
+            addNotification('No puedes transferir a la misma cuenta', 'error')
+            return
+        }
+
+        const amount = parseFloat(transferData.amount)
+        if (isNaN(amount) || amount <= 0) {
+            addNotification('Monto inválido', 'error')
+            return
+        }
+
+        // Crear ID único compartido para vincular ambas transacciones
+        const transferId = crypto.randomUUID()
+
+        // Encontrar nombres de cuentas
+        const fromAccount = accounts.find(a => a.id === transferData.fromAccountId)
+        const toAccount = accounts.find(a => a.id === transferData.toAccountId)
+
+        if (!fromAccount || !toAccount) {
+            addNotification('Error al encontrar las cuentas', 'error')
+            return
+        }
+
+        // Transacción 1: Salida de cuenta origen
+        const tx1 = {
+            id: crypto.randomUUID(),
+            transferId: transferId,
+            isTransfer: true,
+            type: 'expense',
+            accountId: transferData.fromAccountId,
+            categoryId: 'transfer',
+            amount: amount,
+            date: transferData.date,
+            note: `Transferencia a ${toAccount.name}${transferData.note ? ': ' + transferData.note : ''}`,
+            attachment: null
+        }
+
+        // Transacción 2: Entrada a cuenta destino
+        const tx2 = {
+            id: crypto.randomUUID(),
+            transferId: transferId,
+            isTransfer: true,
+            type: 'income',
+            accountId: transferData.toAccountId,
+            categoryId: 'transfer',
+            amount: amount,
+            date: transferData.date,
+            note: `Transferencia desde ${fromAccount.name}${transferData.note ? ': ' + transferData.note : ''}`,
+            attachment: null
+        }
+
+        // Procesar ambas transacciones
+        try {
+            await processTransaction(tx1)
+            await processTransaction(tx2)
+
+            addNotification('Transferencia completada exitosamente', 'success')
+            setIsModalOpen(false)
+
+            // Resetear formulario de transferencia
+            setTransferData({
+                date: format(new Date(), 'yyyy-MM-dd'),
+                fromAccountId: '',
+                toAccountId: '',
+                amount: '',
+                note: ''
+            })
+
+            // También resetear newTx para evitar conflictos
+            setNewTx({
+                date: format(new Date(), 'yyyy-MM-dd'),
+                accountId: accounts[0]?.id || '',
+                categoryId: '',
+                amount: '',
+                type: 'expense',
+                note: '',
+                attachment: null
+            })
+        } catch (error) {
+            console.error('Error al procesar transferencia:', error)
+            addNotification('Error al procesar la transferencia', 'error')
+        }
+    }
+
+    // ============================================================================
+    // FUNCIÓN: openEditModal
+    // PROPÓSITO: Abrir modal de edición con los datos de la transacción
+    // ============================================================================
+    const openEditModal = (transaction) => {
+        setEditingTransaction({ ...transaction })
+        setIsEditModalOpen(true)
+    }
+
+    // ============================================================================
+    // FUNCIÓN: handleRestoreBackup
+    // PROPÓSITO: Restaurar transacciones desde un respaldo
+    // ============================================================================
+    const handleRestoreBackup = (restoredData) => {
+        setTransactions(restoredData)
+        addNotification('✅ Respaldo restaurado correctamente', 'success')
     }
 
     // ============================================================================
@@ -185,36 +501,103 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
     // SINCRONIZA: Eliminación de transacción y cuenta actualizada con Supabase
     // ============================================================================
     const deleteTransaction = async (id) => {
-        if (window.confirm('¿Eliminar esta transacción?')) {
-            // Encontrar la transacción a eliminar
-            const txToDelete = transactions.find(t => t.id === id)
-            if (txToDelete) {
-                // Revertir el cambio en el balance de la cuenta
-                const updatedAccounts = accounts.map(acc => {
+        const txToDelete = transactions.find(t => t.id === id)
+
+        if (!txToDelete) return
+
+        // Si es una transferencia, confirmar eliminación de ambas partes
+        if (txToDelete.isTransfer) {
+            if (!window.confirm('⚠️ Esto eliminará ambas partes de la transferencia. ¿Continuar?')) {
+                return
+            }
+
+            // Encontrar la transacción hermana
+            const siblingTx = transactions.find(
+                t => t.transferId === txToDelete.transferId && t.id !== id
+            )
+
+            // Eliminar ambas transacciones
+            if (siblingTx) {
+                // Revertir ambas en las cuentas afectadas
+                let updatedAccounts = [...accounts]
+
+                // Revertir transacción principal
+                updatedAccounts = updatedAccounts.map(acc => {
                     if (acc.id === txToDelete.accountId) {
                         let newBalance = acc.balance
                         if (acc.type === 'Préstamo') {
-                            // Revertir: ingreso había reducido balance, ahora lo sumamos
                             newBalance = txToDelete.type === 'income' ? acc.balance + txToDelete.amount : acc.balance - txToDelete.amount
                         } else {
-                            // Revertir: ingreso había aumentado balance, ahora lo restamos
                             newBalance = txToDelete.type === 'income' ? acc.balance - txToDelete.amount : acc.balance + txToDelete.amount
                         }
                         return { ...acc, balance: newBalance }
                     }
                     return acc
                 })
+
+                // Revertir transacción hermana
+                updatedAccounts = updatedAccounts.map(acc => {
+                    if (acc.id === siblingTx.accountId) {
+                        let newBalance = acc.balance
+                        if (acc.type === 'Préstamo') {
+                            newBalance = siblingTx.type === 'income' ? acc.balance + siblingTx.amount : acc.balance - siblingTx.amount
+                        } else {
+                            newBalance = siblingTx.type === 'income' ? acc.balance - siblingTx.amount : acc.balance + siblingTx.amount
+                        }
+                        return { ...acc, balance: newBalance }
+                    }
+                    return acc
+                })
+
                 setAccounts(updatedAccounts)
 
-                // Sincronizar cuenta actualizada con Supabase
-                const updatedAccount = updatedAccounts.find(acc => acc.id === txToDelete.accountId)
-                if (updatedAccount) {
-                    const accSaveResult = await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
-
-                    // Verificar sincronización
-                    if (accSaveResult && !accSaveResult.savedToCloud) {
-                        console.warn('⚠️ Cuenta actualizada solo localmente después de eliminar:', accSaveResult.message || accSaveResult.error)
+                // Sincronizar cuentas con Supabase
+                for (const account of updatedAccounts) {
+                    const affectedAccountIds = [txToDelete.accountId, siblingTx.accountId]
+                    if (affectedAccountIds.includes(account.id)) {
+                        await saveToSupabase('accounts', 'finanzas_accounts', account, updatedAccounts)
                     }
+                }
+
+                // Eliminar ambas transacciones
+                const updatedTransactions = transactions.filter(t => t.id !== id && t.id !== siblingTx.id)
+                setTransactions(updatedTransactions)
+
+                await deleteFromSupabase('transactions', 'finanzas_transactions', id, updatedTransactions)
+                await deleteFromSupabase('transactions', 'finanzas_transactions', siblingTx.id, updatedTransactions)
+
+                addNotification('Transferencia eliminada correctamente', 'success')
+                return
+            }
+        }
+
+        // Eliminación normal (no es transferencia)
+        if (window.confirm('¿Eliminar esta transacción?')) {
+            // Revertir el cambio en el balance de la cuenta
+            const updatedAccounts = accounts.map(acc => {
+                if (acc.id === txToDelete.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        // Revertir: ingreso había reducido balance, ahora lo sumamos
+                        newBalance = txToDelete.type === 'income' ? acc.balance + txToDelete.amount : acc.balance - txToDelete.amount
+                    } else {
+                        // Revertir: ingreso había aumentado balance, ahora lo restamos
+                        newBalance = txToDelete.type === 'income' ? acc.balance - txToDelete.amount : acc.balance + txToDelete.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+            setAccounts(updatedAccounts)
+
+            // Sincronizar cuenta actualizada con Supabase
+            const updatedAccount = updatedAccounts.find(acc => acc.id === txToDelete.accountId)
+            if (updatedAccount) {
+                const accSaveResult = await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+
+                // Verificar sincronización
+                if (accSaveResult && !accSaveResult.savedToCloud) {
+                    console.warn('⚠️ Cuenta actualizada solo localmente después de eliminar:', accSaveResult.message || accSaveResult.error)
                 }
             }
 
@@ -230,16 +613,42 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
     // FUNCIONES PARA EXCEL: Descarga de plantilla y Carga de datos
     // ============================================================================
     const downloadTemplate = () => {
-        const headers = ['Fecha (AAAA-MM-DD)', 'Tipo (ingreso/gasto)', 'Monto', 'Categoría', 'Nota', 'Cuenta']
-        const data = [
+        // 1. Hoja Principal: Plantilla con ejemplos reales
+        const headers = ['Fecha (DD/MM/AAAA)', 'Tipo (ingreso/gasto)', 'Monto', 'Categoría', 'Nota', 'Cuenta']
+        const exampleData = [
             headers,
-            ['2025-01-20', 'gasto', 150.50, 'Comida', 'Almuerzo trabajo', 'Efectivo'],
-            ['2025-01-21', 'ingreso', 5000, 'Salario', 'Nómina quincenal', 'Banco']
+            ['20/01/2025', 'gasto', 150.50, DEFAULT_CATEGORIES.expense[0]?.name || 'Comida', 'Almuerzo trabajo', accounts[0]?.name || 'Efectivo'],
+            ['21/01/2025', 'ingreso', 5000, DEFAULT_CATEGORIES.income[0]?.name || 'Salario', 'Nómina quincenal', accounts[1]?.name || 'Banco']
         ]
 
-        const ws = XLSX.utils.aoa_to_sheet(data)
+        // 2. Hoja de Catálogos (Referencia para que el usuario sepa qué escribir)
+        const catIncome = DEFAULT_CATEGORIES.income.map(c => c.name)
+        const catExpense = DEFAULT_CATEGORIES.expense.map(c => c.name)
+        const accountNames = accounts.map(a => a.name)
+
+        const maxRows = Math.max(catIncome.length, catExpense.length, accountNames.length)
+        const catalogHeaders = ['Categorías de Ingreso', 'Categorías de Gasto', 'Mis Cuentas']
+        const catalogData = [catalogHeaders]
+
+        for (let i = 0; i < maxRows; i++) {
+            catalogData.push([
+                catIncome[i] || '',
+                catExpense[i] || '',
+                accountNames[i] || ''
+            ])
+        }
+
         const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, "Plantilla")
+
+        // Crear las hojas
+        const wsPlantilla = XLSX.utils.aoa_to_sheet(exampleData)
+        const wsCatalogos = XLSX.utils.aoa_to_sheet(catalogData)
+
+        // Añadir hojas al libro
+        XLSX.utils.book_append_sheet(wb, wsPlantilla, "Plantilla de Movimientos")
+        XLSX.utils.book_append_sheet(wb, wsCatalogos, "Catálogos (REFERENCIA)")
+
+        // Descargar
         XLSX.writeFile(wb, "Plantilla_Movimientos_NegociosGarcia.xlsx")
     }
 
@@ -283,6 +692,15 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                 const dateObj = new Date(Math.round((date - 25569) * 86400 * 1000))
                 date = format(dateObj, 'yyyy-MM-dd')
             }
+            // Si es string, puede ser DD/MM/AAAA o AAAA-MM-DD
+            else if (typeof date === 'string') {
+                // Detectar formato DD/MM/AAAA
+                if (date.includes('/')) {
+                    const [day, month, year] = date.split('/')
+                    date = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+                }
+                // Si ya está en formato AAAA-MM-DD, dejarlo así
+            }
 
             // 2. Validar Tipo
             const type = typeRaw?.toString().toLowerCase()
@@ -296,25 +714,27 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
             const allCats = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
             let categoryId = ''
             if (categoryRaw) {
-                const catFound = allCats.find(c => c.name.toLowerCase() === categoryRaw.toString().toLowerCase())
+                const searchName = categoryRaw.toString().trim().toLowerCase()
+                const catFound = allCats.find(c => c.name.toLowerCase() === searchName)
                 categoryId = catFound ? catFound.id : 'others' // Default a 'Otros'
             } else {
-                errors.push(`Fila ${rowNum}: Falta categoría`)
+                errors.push(`Fila ${rowNum}: Falta el nombre de la categoría`)
             }
 
             // 5. Validar Cuenta (Buscamos ID)
             let accountId = ''
             if (accountRaw) {
-                const accFound = accounts.find(a => a.name.toLowerCase() === accountRaw.toString().toLowerCase())
+                const searchAcc = accountRaw.toString().trim().toLowerCase()
+                const accFound = accounts.find(a => a.name.trim().toLowerCase() === searchAcc)
                 if (accFound) {
                     accountId = accFound.id
                 } else {
-                    errors.push(`Fila ${rowNum}: Cuenta '${accountRaw}' no existe. Créala primero o usa una existente.`)
+                    errors.push(`Fila ${rowNum}: La cuenta '${accountRaw}' no coincide con ninguna cuenta guardada. Verifica el nombre exacto.`)
                 }
             } else {
                 // Si no se especifica cuenta y solo hay una, usar esa. Si hay varias, error.
                 if (accounts.length === 1) accountId = accounts[0].id
-                else errors.push(`Fila ${rowNum}: Falta especificar la cuenta`)
+                else errors.push(`Fila ${rowNum}: No se especificó la cuenta en el Excel y tienes varias registradas.`)
             }
 
             if (errors.length === 0 || errors[errors.length - 1].split(':')[0] !== `Fila ${rowNum}`) {
@@ -340,13 +760,43 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
     const confirmImport = async () => {
         if (importPreview.length === 0) return
 
-        let importedCount = 0
-        for (const tx of importPreview) {
-            await processTransaction(tx)
-            importedCount++
+        // 1. Preparar las nuevas transacciones
+        const newTransactionsList = [...importPreview, ...transactions]
+
+        // 2. Calcular los nuevos balances de las cuentas de forma acumulativa
+        let updatedAccounts = [...accounts]
+        importPreview.forEach(tx => {
+            updatedAccounts = updatedAccounts.map(acc => {
+                if (acc.id === tx.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = tx.type === 'income' ? acc.balance - tx.amount : acc.balance + tx.amount
+                    } else {
+                        newBalance = tx.type === 'income' ? acc.balance + tx.amount : acc.balance - tx.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+        })
+
+        // 3. Actualizar estados locales de una sola vez (esto es instantáneo para el usuario)
+        setTransactions(newTransactionsList)
+        setAccounts(updatedAccounts)
+
+        // 4. Sincronizar masivamente con Supabase
+        // Primero las transacciones (usando syncToSupabase que ahora maneja arrays)
+        const txSyncResult = await syncToSupabase('transactions', 'finanzas_transactions', newTransactionsList)
+
+        // Luego las cuentas con sus nuevos balances
+        const accSyncResult = await syncToSupabase('accounts', 'finanzas_accounts', updatedAccounts)
+
+        if (txSyncResult && accSyncResult) {
+            showNotification(`✅ Se importaron ${importPreview.length} movimientos y se actualizaron los balances correctamente.`, 'success')
+        } else {
+            showNotification(`⚠️ Los datos se cargaron localmente pero hubo un problema al sincronizar con la nube.`, 'warning')
         }
 
-        alert(`Se importaron ${importedCount} movimientos correctamente.`)
         setIsImportModalOpen(false)
         setImportPreview([])
         setImportErrors([])
@@ -355,10 +805,76 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
     const filteredTransactions = transactions.filter(t => {
         const matchesSearch = t.note.toLowerCase().includes(searchQuery.toLowerCase())
         const matchesType = filterType === 'all' || t.type === filterType
-        return matchesSearch && matchesType
+        const matchesAccount = !selectedAccountId || t.accountId === selectedAccountId
+        return matchesSearch && matchesType && matchesAccount
     })
 
-    const categories = newTx.type === 'income' ? DEFAULT_CATEGORIES.income : DEFAULT_CATEGORIES.expense
+    // ============================================================================
+    // LÓGICA: Calcular Saldo por Línea
+    // PROPÓSITO: Si hay una cuenta seleccionada, calcular la evolución del saldo
+    // ============================================================================
+    const transactionsWithRunningBalance = React.useMemo(() => {
+        if (!selectedAccountId) return filteredTransactions
+
+        const account = accounts.find(a => a.id === selectedAccountId)
+        if (!account) return filteredTransactions
+
+        // 1. Ordenar transacciones por fecha (más antiguas primero para el cálculo)
+        // Usamos una copia para no mutar el original
+        const sortedForBalance = [...transactions]
+            .filter(t => t.accountId === selectedAccountId)
+            .sort((a, b) => new Date(a.date) - new Date(b.date))
+
+        // 2. Calcular saldos históricos trabajando hacia atrás desde el balance actual
+        // B_final = B_inicial + Sum(Deltas) -> B_inicial = B_final - Sum(Deltas)
+        let currentIterativeBalance = account.balance
+
+        // Pero es más fácil ir desde el presente hacia atrás si queremos el saldo justo después de cada tx
+        // Ordenamos descendente (más nuevas primero)
+        const sortedDesc = [...sortedForBalance].reverse()
+        const results = []
+
+        let running = account.balance
+        sortedDesc.forEach(tx => {
+            results.push({ ...tx, runningBalance: running })
+
+            // Revertir delta para la siguiente (anterior en el tiempo)
+            const isLoan = account.type === 'Préstamo'
+            if (isLoan) {
+                // Para préstamos: ingreso redujo balance, gasto aumentó.
+                // Para revertir: ingreso suma, gasto resta.
+                running = tx.type === 'income' ? running + tx.amount : running - tx.amount
+            } else {
+                // Para cuentas normales: ingreso aumentó, gasto disminuyó.
+                // Para revertir: ingreso resta, gasto suma.
+                running = tx.type === 'income' ? running - tx.amount : running + tx.amount
+            }
+        })
+
+        // Añadir fila de SALDO INICIAL al final (es el punto de partida)
+        results.push({
+            id: 'initial-' + selectedAccountId,
+            isInitialBalance: true,
+            date: sortedForBalance.length > 0 ? sortedForBalance[0].date : format(new Date(), 'yyyy-MM-dd'),
+            note: 'PUNTO DE PARTIDA (Saldo Inicial)',
+            amount: 0,
+            type: 'neutral',
+            runningBalance: running,
+            accountId: selectedAccountId
+        })
+
+        // El resultado ya está filtrado por cuenta y tiene el saldo por línea
+        return results.filter(t => {
+            if (t.isInitialBalance) return searchQuery === '' && filterType === 'all'
+            const matchesSearch = t.note.toLowerCase().includes(searchQuery.toLowerCase())
+            const matchesType = filterType === 'all' || t.type === filterType
+            return matchesSearch && matchesType
+        })
+    }, [filteredTransactions, selectedAccountId, accounts, transactions, searchQuery, filterType])
+
+    // Obtener categorías combinadas según el tipo de transacción
+    const categories = getCombinedCategories(newTx.type)
+    const editCategories = editingTransaction ? getCombinedCategories(editingTransaction.type) : []
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -368,6 +884,22 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                     <p className="text-slate-500 font-medium">Registra y revisa todos tus ingresos y gastos.</p>
                 </div>
                 <div className="flex gap-3">
+                    <button
+                        onClick={() => setIsBackupModalOpen(true)}
+                        className="btn-secondary text-sm"
+                        title="Gestionar respaldos automáticos"
+                    >
+                        <Shield size={18} />
+                        <span>Respaldos</span>
+                    </button>
+                    <button
+                        onClick={() => setIsHistoryModalOpen(true)}
+                        className="btn-secondary text-sm"
+                        title="Ver historial de importaciones"
+                    >
+                        <History size={18} />
+                        <span>Historial</span>
+                    </button>
                     <button
                         onClick={() => setIsImportModalOpen(true)}
                         className="btn-secondary text-sm"
@@ -410,6 +942,26 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                 </div>
             </div>
 
+            {selectedAccountId && (
+                <div className="flex items-center justify-between bg-blue-50 border border-blue-100 p-4 rounded-xl animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center">
+                            <CreditCard size={20} />
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Filtrando por cuenta</p>
+                            <h4 className="font-bold text-slate-900">{accounts.find(a => a.id === selectedAccountId)?.name}</h4>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setSelectedAccountId(null)}
+                        className="text-xs font-bold text-slate-400 hover:text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg transition-all flex items-center gap-2"
+                    >
+                        <X size={14} /> QUITAR FILTRO
+                    </button>
+                </div>
+            )}
+
             {/* Transactions Table */}
             <div className="card !p-0 overflow-hidden border-slate-200/60 shadow-md">
                 <div className="overflow-x-auto">
@@ -421,36 +973,118 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Categoría</th>
                                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Nota</th>
                                 <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Monto</th>
+                                {selectedAccountId && <th className="px-6 py-4 text-right text-xs font-bold text-blue-600 uppercase tracking-widest">Saldo</th>}
                                 <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredTransactions.length === 0 ? (
+                            {transactionsWithRunningBalance.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="px-6 py-20 text-center text-slate-400">
+                                    <td colSpan={selectedAccountId ? "7" : "6"} className="px-6 py-20 text-center text-slate-400">
                                         No se encontraron movimientos.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredTransactions.map((t) => {
+                                transactionsWithRunningBalance.map((t) => {
                                     const account = accounts.find(a => a.id === t.accountId)
-                                    const category = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                                    const allCategories = getCombinedCategories(t.type)
+                                    const category = allCategories.find(c => c.id === t.categoryId)
+
+                                    if (t.isInitialBalance) {
+                                        return (
+                                            <tr key={t.id} className="bg-blue-50/30">
+                                                <td className="px-6 py-4 text-sm text-slate-400 font-bold italic">
+                                                    {t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }) : t.date}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="text-xs font-bold text-slate-400">---</span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-blue-600 text-[10px] font-black uppercase border border-blue-100 shadow-sm">
+                                                        🏁 INICIO
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="text-sm font-bold text-blue-700/60 uppercase tracking-tight">{t.note}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <span className="text-sm font-bold text-slate-400">---</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-black text-blue-600 bg-blue-100/20 whitespace-nowrap">
+                                                    ${t.runningBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        onClick={() => openInitialEditModal(t.runningBalance)}
+                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                        title="Ajustar Saldo Inicial"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        )
+                                    }
 
                                     return (
                                         <tr key={t.id} className="hover:bg-slate-50/50 transition-colors group">
                                             <td className="px-6 py-4 text-sm text-slate-600 font-medium whitespace-nowrap">
-                                                {t.date}
+                                                {t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }) : t.date}
                                             </td>
                                             <td className="px-6 py-4">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: account?.color || '#cbd5e1' }} />
-                                                    <span className="text-sm font-semibold text-slate-700">{account?.name || '---'}</span>
-                                                </div>
+                                                {t.isTransfer ? (
+                                                    /* Mostrar ambas cuentas para transferencias */
+                                                    <div className="flex items-center gap-2">
+                                                        {(() => {
+                                                            const fromAccount = transactions.find(tx => tx.transferId === t.transferId && tx.type === 'expense')
+                                                            const toAccount = transactions.find(tx => tx.transferId === t.transferId && tx.type === 'income')
+                                                            const fromAcc = accounts.find(a => a.id === fromAccount?.accountId)
+                                                            const toAcc = accounts.find(a => a.id === toAccount?.accountId)
+
+                                                            return (
+                                                                <>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: fromAcc?.color }} />
+                                                                        <span className="text-xs font-semibold text-slate-600">{fromAcc?.name}</span>
+                                                                    </div>
+                                                                    <span className="text-blue-400">→</span>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: toAcc?.color }} />
+                                                                        <span className="text-xs font-semibold text-slate-600">{toAcc?.name}</span>
+                                                                    </div>
+                                                                </>
+                                                            )
+                                                        })()}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        {account ? (
+                                                            <>
+                                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: account.color }} />
+                                                                <span className="text-sm font-semibold text-slate-700">{account.name}</span>
+                                                            </>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold uppercase border border-amber-200">
+                                                                ⚠️ SIN CUENTA
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
-                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold uppercase transition-colors group-hover:bg-white border border-transparent group-hover:border-slate-200 whitespace-nowrap">
-                                                    {category?.icon} {category?.name || 'Sin cat.'}
-                                                </span>
+                                                {t.isTransfer ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs font-bold uppercase border border-blue-200 whitespace-nowrap">
+                                                        {TRANSFER_CATEGORY.icon} {TRANSFER_CATEGORY.name}
+                                                    </span>
+                                                ) : category ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold uppercase transition-colors group-hover:bg-white border border-transparent group-hover:border-slate-200 whitespace-nowrap">
+                                                        {category.icon} {category.name}
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold uppercase border border-amber-200">
+                                                        ⚠️ SIN CAT.
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex flex-col gap-1">
@@ -471,13 +1105,28 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                                             <td className={`px-6 py-4 text-right font-bold whitespace-nowrap ${t.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                 {t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                             </td>
+                                            {selectedAccountId && (
+                                                <td className="px-6 py-4 text-right font-black text-slate-900 bg-slate-50/30 whitespace-nowrap">
+                                                    ${t.runningBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                                </td>
+                                            )}
                                             <td className="px-6 py-4 text-right">
-                                                <button
-                                                    onClick={() => deleteTransaction(t.id)}
-                                                    className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => openEditModal(t)}
+                                                        className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                        title="Editar"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deleteTransaction(t.id)}
+                                                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                                        title="Eliminar"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     )
@@ -648,19 +1297,212 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                         </div>
 
                         <form onSubmit={handleAddTransaction} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
+                            {/* Type Toggle - 3 opciones */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setNewTx({ ...newTx, type: 'income', categoryId: '' })}
+                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'income' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                >
+                                    <ArrowUpCircle size={16} /> Ingreso
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setNewTx({ ...newTx, type: 'expense', categoryId: '' })}
+                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'expense' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                >
+                                    <ArrowDownCircle size={16} /> Gasto
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setNewTx({ ...newTx, type: 'transfer', categoryId: '' })}
+                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'transfer' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                >
+                                    🔄 Transfer
+                                </button>
+                            </div>
+
+                            {newTx.type === 'transfer' ? (
+                                /* UI PARA TRANSFERENCIAS */
+                                <>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Fecha</label>
+                                        <input
+                                            type="date" required className="input-field"
+                                            value={transferData.date} onChange={e => setTransferData({ ...transferData, date: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Desde Cuenta</label>
+                                        <select
+                                            required className="input-field"
+                                            value={transferData.fromAccountId} onChange={e => setTransferData({ ...transferData, fromAccountId: e.target.value })}
+                                        >
+                                            <option value="">Selecciona cuenta origen</option>
+                                            {accounts.map(acc => (
+                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Hacia Cuenta</label>
+                                        <select
+                                            required className="input-field"
+                                            value={transferData.toAccountId} onChange={e => setTransferData({ ...transferData, toAccountId: e.target.value })}
+                                        >
+                                            <option value="">Selecciona cuenta destino</option>
+                                            {accounts
+                                                .filter(acc => acc.id !== transferData.fromAccountId)
+                                                .map(acc => (
+                                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                                ))
+                                            }
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Monto ($)</label>
+                                        <input
+                                            type="number" step="0.01" required placeholder="0.00" className="input-field"
+                                            value={transferData.amount} onChange={e => setTransferData({ ...transferData, amount: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota (Opcional)</label>
+                                        <input
+                                            type="text" placeholder="Ej. Retiro cajero" className="input-field"
+                                            value={transferData.note} onChange={e => setTransferData({ ...transferData, note: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-4 pt-4">
+                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
+                                        <button type="submit" className="flex-1 btn-primary !py-3">Transferir</button>
+                                    </div>
+                                </>
+                            ) : (
+                                /* UI PARA INGRESOS/GASTOS */
+                                <>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Fecha</label>
+                                            <input
+                                                type="date" required className="input-field"
+                                                value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Monto ($)</label>
+                                            <input
+                                                type="number" step="0.01" required placeholder="0.00" className="input-field"
+                                                value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Cuenta</label>
+                                        <select
+                                            required className="input-field"
+                                            value={newTx.accountId} onChange={e => setNewTx({ ...newTx, accountId: e.target.value })}
+                                        >
+                                            <option value="">Selecciona una cuenta</option>
+                                            {accounts.map(acc => (
+                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Categoría</label>
+                                        <select
+                                            required className="input-field"
+                                            value={newTx.categoryId} onChange={e => setNewTx({ ...newTx, categoryId: e.target.value })}
+                                        >
+                                            <option value="">Selecciona una categoría</option>
+                                            {categories.map(cat => (
+                                                <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota / Descripción</label>
+                                        <input
+                                            type="text" placeholder="Ej. Pago de internet" className="input-field"
+                                            value={newTx.note} onChange={e => setNewTx({ ...newTx, note: e.target.value })}
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Comprobante (Opcional)</label>
+                                        <div className="flex items-center gap-4">
+                                            <div className="relative flex-1">
+                                                <input
+                                                    type="file" accept="image/*" capture="environment"
+                                                    onChange={handleFileChange}
+                                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                                                />
+                                                <div className="btn-secondary !w-full flex items-center justify-center gap-2 !py-2.5">
+                                                    <Camera size={18} />
+                                                    <span>{newTx.attachment ? 'Cambiar Foto' : 'Tomar Foto / Subir'}</span>
+                                                </div>
+                                            </div>
+                                            {newTx.attachment && (
+                                                <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200">
+                                                    <img src={newTx.attachment} className="w-full h-full object-cover" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setNewTx({ ...newTx, attachment: null })}
+                                                        className="absolute top-0 right-0 bg-rose-500 text-white rounded-bl-lg p-0.5"
+                                                    >
+                                                        <X size={10} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-4 pt-4">
+                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
+                                        <button type="submit" className="flex-1 btn-primary !py-3">Guardar</button>
+                                    </div>
+                                </>
+                            )}
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Transaction Modal */}
+            {isEditModalOpen && editingTransaction && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsEditModalOpen(false)} />
+                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>Editar Movimiento</h3>
+                            <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleEditTransaction} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
                             {/* Type Toggle */}
                             <div className="grid grid-cols-2 gap-4">
                                 <button
                                     type="button"
-                                    onClick={() => setNewTx({ ...newTx, type: 'income', categoryId: '' })}
-                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 ${newTx.type === 'income' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    onClick={() => setEditingTransaction({ ...editingTransaction, type: 'income', categoryId: '' })}
+                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 ${editingTransaction.type === 'income' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
                                 >
                                     <ArrowUpCircle size={18} /> Ingreso
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => setNewTx({ ...newTx, type: 'expense', categoryId: '' })}
-                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 ${newTx.type === 'expense' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    onClick={() => setEditingTransaction({ ...editingTransaction, type: 'expense', categoryId: '' })}
+                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 ${editingTransaction.type === 'expense' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
                                 >
                                     <ArrowDownCircle size={18} /> Gasto
                                 </button>
@@ -671,14 +1513,14 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                                     <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Fecha</label>
                                     <input
                                         type="date" required className="input-field"
-                                        value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })}
+                                        value={editingTransaction.date} onChange={e => setEditingTransaction({ ...editingTransaction, date: e.target.value })}
                                     />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Monto ($)</label>
                                     <input
                                         type="number" step="0.01" required placeholder="0.00" className="input-field"
-                                        value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })}
+                                        value={editingTransaction.amount} onChange={e => setEditingTransaction({ ...editingTransaction, amount: e.target.value })}
                                     />
                                 </div>
                             </div>
@@ -687,7 +1529,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Cuenta</label>
                                 <select
                                     required className="input-field"
-                                    value={newTx.accountId} onChange={e => setNewTx({ ...newTx, accountId: e.target.value })}
+                                    value={editingTransaction.accountId} onChange={e => setEditingTransaction({ ...editingTransaction, accountId: e.target.value })}
                                 >
                                     <option value="">Selecciona una cuenta</option>
                                     {accounts.map(acc => (
@@ -700,10 +1542,10 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Categoría</label>
                                 <select
                                     required className="input-field"
-                                    value={newTx.categoryId} onChange={e => setNewTx({ ...newTx, categoryId: e.target.value })}
+                                    value={editingTransaction.categoryId} onChange={e => setEditingTransaction({ ...editingTransaction, categoryId: e.target.value })}
                                 >
                                     <option value="">Selecciona una categoría</option>
-                                    {categories.map(cat => (
+                                    {editCategories.map(cat => (
                                         <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                                     ))}
                                 </select>
@@ -713,50 +1555,75 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts }) 
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota / Descripción</label>
                                 <input
                                     type="text" placeholder="Ej. Pago de internet" className="input-field"
-                                    value={newTx.note} onChange={e => setNewTx({ ...newTx, note: e.target.value })}
+                                    value={editingTransaction.note} onChange={e => setEditingTransaction({ ...editingTransaction, note: e.target.value })}
                                 />
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Comprobante (Opcional)</label>
-                                <div className="flex items-center gap-4">
-                                    <div className="relative flex-1">
-                                        <input
-                                            type="file" accept="image/*" capture="environment"
-                                            onChange={handleFileChange}
-                                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                                        />
-                                        <div className="btn-secondary !w-full flex items-center justify-center gap-2 !py-2.5">
-                                            <Camera size={18} />
-                                            <span>{newTx.attachment ? 'Cambiar Foto' : 'Tomar Foto / Subir'}</span>
-                                        </div>
-                                    </div>
-                                    {newTx.attachment && (
-                                        <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200">
-                                            <img src={newTx.attachment} className="w-full h-full object-cover" />
-                                            <button
-                                                type="button"
-                                                onClick={() => setNewTx({ ...newTx, attachment: null })}
-                                                className="absolute top-0 right-0 bg-rose-500 text-white rounded-bl-lg p-0.5"
-                                            >
-                                                <X size={10} />
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
                             <div className="flex gap-4 pt-4">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
-                                <button type="submit" className="flex-1 btn-primary !py-3">Guardar</button>
+                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
+                                <button type="submit" className="flex-1 btn-primary !py-3">Actualizar</button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
 
-            {/* Contenedor de Notificaciones */}
-            <NotificationContainer />
+            {/* Backup Manager Modal */}
+            <BackupManager
+                dataType="transactions"
+                isOpen={isBackupModalOpen}
+                onClose={() => setIsBackupModalOpen(false)}
+                onRestore={handleRestoreBackup}
+            />
+
+            {/* Import History Manager Modal */}
+            <ImportHistoryManager
+                importLogs={importLogs}
+                setImportLogs={setImportLogs}
+                isOpen={isHistoryModalOpen}
+                onClose={() => setIsHistoryModalOpen(false)}
+                onReimport={() => { }}
+            />
+
+            {/* Initial Balance Adjustment Modal */}
+            {isInitialModalOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsInitialModalOpen(false)} />
+                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div>
+                                <h3 className="text-xl font-bold text-slate-900">Ajustar Saldo Inicial</h3>
+                                <p className="text-sm text-slate-500 mt-1">Cambia el punto de partida histórico de esta cuenta.</p>
+                            </div>
+                            <button onClick={() => setIsInitialModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleUpdateInitialBalance} className="p-8 space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nuevo Saldo Inicial</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                                    <input
+                                        type="number" step="0.01" required autoFocus
+                                        className="input-field !pl-8 text-2xl font-black text-slate-900"
+                                        value={tempInitialBalance} onChange={e => setTempInitialBalance(e.target.value)}
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                                <p className="text-[10px] text-slate-400 italic">
+                                    * Esto ajustará proporcionalmente tu saldo actual sin alterar tus transacciones registradas.
+                                </p>
+                            </div>
+
+                            <div className="flex gap-4 pt-4">
+                                <button type="button" onClick={() => setIsInitialModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
+                                <button type="submit" className="flex-1 btn-primary !py-3">Ajustar Saldo</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

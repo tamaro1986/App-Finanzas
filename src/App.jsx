@@ -14,8 +14,13 @@ import Journal from './components/Journal'
 import DebtModule from './components/DebtModule'
 import InvestmentPortfolio from './components/InvestmentPortfolio'
 import Auth from './components/Auth'
+import CategoryCharts from './components/CategoryCharts'
+import SyncStatusIndicator from './components/SyncStatusIndicator'
+import { SyncNotificationProvider } from './components/SyncNotification'
 import { Menu, X, LogOut, Loader } from 'lucide-react'
 import { supabase } from './lib/supabase'
+// Importar herramientas de recuperación de datos (disponibles en window.finanzasDebug)
+import './utils/dataRecovery'
 
 // ============================================================================
 // COMPONENTE PRINCIPAL: App
@@ -23,6 +28,7 @@ import { supabase } from './lib/supabase'
 // ============================================================================
 function App() {
     const [activeView, setActiveView] = useState('dashboard')
+    const [selectedAccountId, setSelectedAccountId] = useState(null)
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
     // Estado de autenticación
     const [user, setUser] = useState(null)
@@ -39,6 +45,7 @@ function App() {
     const [logEntries, setLogEntries] = useState([])
     const [medicationList, setMedicationList] = useState(["Sertralina", "Quetiapina", "Magnesium", "Ashwaganda", "Ansiovit", "Somit"])
     const [investments, setInvestments] = useState([])
+    const [importLogs, setImportLogs] = useState([])
 
     // ============================================================================
     // EFFECT: Verificar sesión y cargar datos al iniciar
@@ -83,7 +90,7 @@ function App() {
         try {
             const { initializeData } = await import('./lib/supabaseSync')
 
-            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData] = await Promise.all([
+            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData] = await Promise.all([
                 initializeData('transactions', 'finanzas_transactions'),
                 initializeData('accounts', 'finanzas_accounts'),
                 initializeData('budgets', 'finanzas_budgets'),
@@ -93,19 +100,39 @@ function App() {
                 initializeData('journal_tcc', 'finanzas_journal_cbt'),
                 initializeData('journal_health_log', 'finanzas_journal_health_log'),
                 initializeData('medications', 'finanzas_journal_med_list'),
-                initializeData('investments', 'finanzas_investments')
+                initializeData('investments', 'finanzas_investments'),
+                initializeData('import_logs', 'finanzas_import_logs')
             ])
 
             setTransactions(txData || [])
             setAccounts(accData || [])
-            setBudgets(budgetData && !Array.isArray(budgetData) ? budgetData : (Array.isArray(budgetData) && budgetData.length > 0 ? budgetData[0] : {}))
+
+            // Manejar presupuesto (convertir array de filas de Supabase en objeto de periodos)
+            let finalBudgets = {}
+            if (budgetData && Array.isArray(budgetData)) {
+                budgetData.forEach(row => {
+                    if (row.month && row.categories) {
+                        finalBudgets[row.month] = row.categories
+                    }
+                })
+            } else if (budgetData && !Array.isArray(budgetData)) {
+                finalBudgets = budgetData // Fallback para localStorage
+            }
+            setBudgets(finalBudgets)
+
             setVehicles(vehicleData || [])
             setMedicalRecords(medRecordData || [])
             setPatients(patientData || [])
             setTccEntries(tccData || [])
             setLogEntries(logData || [])
             setInvestments(invData || [])
-            if (medListData && medListData.length > 0) setMedicationList(medListData)
+            setImportLogs(importLogData || [])
+
+            // Manejar lista de medicamentos
+            if (medListData && Array.isArray(medListData) && medListData.length > 0) {
+                const meds = medListData[0].medications || medListData
+                setMedicationList(Array.isArray(meds) ? meds : [])
+            }
         } catch (error) {
             console.error('Error loading global data:', error)
         } finally {
@@ -130,7 +157,9 @@ function App() {
     const renderView = () => {
         switch (activeView) {
             case 'dashboard':
-                return <Dashboard transactions={transactions} accounts={accounts} />
+                return <Dashboard transactions={transactions} accounts={accounts} setActiveView={setActiveView} />
+            case 'analytics':
+                return <CategoryCharts transactions={transactions} />
             case 'budget':
                 return (
                     <BudgetModule
@@ -140,7 +169,14 @@ function App() {
                     />
                 )
             case 'accounts':
-                return <Accounts accounts={accounts} setAccounts={setAccounts} />
+                return (
+                    <Accounts
+                        accounts={accounts}
+                        setAccounts={setAccounts}
+                        setActiveView={setActiveView}
+                        setSelectedAccountId={setSelectedAccountId}
+                    />
+                )
             case 'transactions':
                 return (
                     <Transactions
@@ -148,6 +184,9 @@ function App() {
                         setTransactions={setTransactions}
                         accounts={accounts}
                         setAccounts={setAccounts}
+                        budgets={budgets || {}}
+                        selectedAccountId={selectedAccountId}
+                        setSelectedAccountId={setSelectedAccountId}
                     />
                 )
             case 'vehicles':
@@ -209,63 +248,69 @@ function App() {
 
     // Mostrar aplicación principal si hay usuario autenticado
     return (
-        <div className="flex h-screen bg-[#f9fafb] overflow-hidden font-sans">
-            {/* Mobile Header */}
-            <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-emerald-200/60 flex items-center justify-between px-6 z-50">
-                <span className="text-lg font-bold text-[#1e3a5f]" style={{ fontFamily: 'Georgia, serif' }}>
-                    NegociosGarcia
-                </span>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={handleLogout}
-                        className="p-2 text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
-                        title="Cerrar sesión"
-                    >
-                        <LogOut size={20} />
-                    </button>
-                    <button
-                        onClick={toggleSidebar}
-                        className="p-2 text-[#0d8b5f] hover:bg-emerald-50 rounded-lg transition-colors"
-                        aria-label="Toggle Menu"
-                    >
-                        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-                    </button>
+        <SyncNotificationProvider>
+            <div className="flex h-screen bg-[#f9fafb] overflow-hidden font-sans">
+                {/* Indicador de Sincronización (Fijo en la parte superior derecha) */}
+                <div className="fixed top-4 right-4 z-[9999] pointer-events-none">
+                    <SyncStatusIndicator />
                 </div>
-            </header>
+                {/* Mobile Header */}
+                <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-emerald-200/60 flex items-center justify-between px-6 z-50">
+                    <span className="text-lg font-bold text-[#1e3a5f]" style={{ fontFamily: 'Georgia, serif' }}>
+                        NegociosGarcia
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleLogout}
+                            className="p-2 text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-all"
+                            title="Cerrar sesión"
+                        >
+                            <LogOut size={20} />
+                        </button>
+                        <button
+                            onClick={toggleSidebar}
+                            className="p-2 text-[#0d8b5f] hover:bg-emerald-50 rounded-lg transition-colors"
+                            aria-label="Toggle Menu"
+                        >
+                            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+                        </button>
+                    </div>
+                </header>
 
-            {/* Mobile Sidebar Overlay */}
-            {isSidebarOpen && (
-                <div
-                    className="lg:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity"
-                    onClick={() => setIsSidebarOpen(false)}
-                />
-            )}
+                {/* Mobile Sidebar Overlay */}
+                {isSidebarOpen && (
+                    <div
+                        className="lg:hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity"
+                        onClick={() => setIsSidebarOpen(false)}
+                    />
+                )}
 
-            {/* Sidebar */}
-            <aside className={`
+                {/* Sidebar */}
+                <aside className={`
                 fixed lg:static inset-y-0 left-0 w-72 bg-white border-r border-slate-200/60 z-40 transform transition-transform duration-300 ease-in-out
                 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
             `}>
-                <Sidebar
-                    activeView={activeView}
-                    setActiveView={(view) => {
-                        setActiveView(view)
-                        setIsSidebarOpen(false)
-                    }}
-                    onLogout={handleLogout}
-                    userEmail={user?.email}
-                />
-            </aside>
+                    <Sidebar
+                        activeView={activeView}
+                        setActiveView={(view) => {
+                            setActiveView(view)
+                            setIsSidebarOpen(false)
+                        }}
+                        onLogout={handleLogout}
+                        userEmail={user?.email}
+                    />
+                </aside>
 
-            {/* Main Content Area */}
-            <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">
-                <div className="max-w-7xl mx-auto p-6 md:p-10">
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                        {renderView()}
+                {/* Main Content Area */}
+                <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">
+                    <div className="max-w-7xl mx-auto p-6 md:p-10">
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            {renderView()}
+                        </div>
                     </div>
-                </div>
-            </main>
-        </div>
+                </main>
+            </div>
+        </SyncNotificationProvider>
     )
 }
 

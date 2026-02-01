@@ -3,12 +3,13 @@
 // PROPÓSITO: Navegación lateral con marca NegociosGarcia
 // ============================================================================
 import React from 'react'
-import { LayoutDashboard, Wallet, CreditCard, Settings, PieChart, Car, Stethoscope, Brain, Landmark, TrendingUp, LogOut } from 'lucide-react'
+import { LayoutDashboard, Wallet, CreditCard, Settings, PieChart, Car, Stethoscope, Brain, Landmark, TrendingUp, LogOut, BarChart3 } from 'lucide-react'
 import { BRAND_TEXT } from '../constants/brandColors'
 
 const Sidebar = ({ activeView, setActiveView, onLogout, userEmail }) => {
     const menuItems = [
         { id: 'dashboard', label: 'Panel Principal', icon: LayoutDashboard },
+        { id: 'analytics', label: 'Análisis Mensual', icon: BarChart3 },
         { id: 'budget', label: 'Presupuesto', icon: PieChart },
         { id: 'accounts', label: 'Mis Cuentas', icon: Wallet },
         { id: 'transactions', label: 'Movimientos', icon: CreditCard },
@@ -43,8 +44,8 @@ const Sidebar = ({ activeView, setActiveView, onLogout, userEmail }) => {
                         key={item.id}
                         onClick={() => setActiveView(item.id)}
                         className={`sidebar-link group w-full ${activeView === item.id
-                                ? 'bg-gradient-to-r from-[#0d8b5f]/10 to-[#0d8b5f]/5 text-[#0d8b5f] font-semibold border-l-4 border-[#0d8b5f]'
-                                : 'text-slate-500 hover:bg-slate-50 hover:text-[#1e3a5f] border-l-4 border-transparent'
+                            ? 'bg-gradient-to-r from-[#0d8b5f]/10 to-[#0d8b5f]/5 text-[#0d8b5f] font-semibold border-l-4 border-[#0d8b5f]'
+                            : 'text-slate-500 hover:bg-slate-50 hover:text-[#1e3a5f] border-l-4 border-transparent'
                             }`}
                     >
                         <item.icon
@@ -73,8 +74,8 @@ const Sidebar = ({ activeView, setActiveView, onLogout, userEmail }) => {
                 <button
                     onClick={() => setActiveView('settings')}
                     className={`sidebar-link group w-full ${activeView === 'settings'
-                            ? 'bg-gradient-to-r from-[#0d8b5f]/10 to-[#0d8b5f]/5 text-[#0d8b5f] font-semibold border-l-4 border-[#0d8b5f]'
-                            : 'text-slate-500 hover:bg-slate-50 hover:text-[#1e3a5f] border-l-4 border-transparent'
+                        ? 'bg-gradient-to-r from-[#0d8b5f]/10 to-[#0d8b5f]/5 text-[#0d8b5f] font-semibold border-l-4 border-[#0d8b5f]'
+                        : 'text-slate-500 hover:bg-slate-50 hover:text-[#1e3a5f] border-l-4 border-transparent'
                         }`}
                 >
                     <Settings size={20} className={`transition-colors ${activeView === 'settings' ? 'text-[#0d8b5f]' : 'text-slate-400 group-hover:text-[#1e3a5f]'}`} />

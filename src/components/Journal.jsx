@@ -21,6 +21,8 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newMedName, setNewMedName] = useState('')
 
+    const [editingId, setEditingId] = useState(null)
+
     // States for New Entries
     const [newTccEntry, setNewTccEntry] = useState({
         date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
@@ -42,19 +44,65 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         symptoms: ''
     })
 
+    // Función para abrir el modal en modo edición
+    const openEditModal = (entry, type) => {
+        setEditingId(entry.id)
+        if (type === 'tcc') {
+            setNewTccEntry({ ...entry })
+        } else {
+            setNewLogEntry({ ...entry })
+        }
+        setActiveTab(type)
+        setIsModalOpen(true)
+    }
+
+    // Resetear formularios al cerrar modal
+    const closeModal = () => {
+        setIsModalOpen(false)
+        setEditingId(null)
+        setNewTccEntry({
+            date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+            situation: '',
+            emotions: '',
+            automaticThought: '',
+            distortion: '',
+            refutation: '',
+            reevaluation: ''
+        })
+        const resetMeds = {}
+        medicationList.forEach(m => { resetMeds[m] = false })
+        setNewLogEntry({
+            date: format(new Date(), "yyyy-MM-dd"),
+            anxietyLevel: 5,
+            insomniaLevel: 0,
+            medications: resetMeds,
+            meditation: { morning: 0, afternoon: 0, night: 0 },
+            diary_note: '',
+            symptoms: ''
+        })
+    }
+
     // Initialize newLogEntry medications when medicationList changes or on mount
     useEffect(() => {
-        const initialMeds = {}
-        medicationList.forEach(m => {
-            initialMeds[m] = false
-        })
-        setNewLogEntry(prev => ({ ...prev, medications: initialMeds }))
-    }, [medicationList])
+        if (!editingId) {
+            const initialMeds = {}
+            medicationList.forEach(m => {
+                initialMeds[m] = false
+            })
+            setNewLogEntry(prev => ({ ...prev, medications: initialMeds }))
+        }
+    }, [medicationList, editingId])
 
-    const handleAddMedication = () => {
+    const handleAddMedication = async () => {
         if (!newMedName.trim()) return
         if (medicationList.includes(newMedName.trim())) return
-        setMedicationList([...medicationList, newMedName.trim()])
+        const updatedList = [...medicationList, newMedName.trim()]
+        setMedicationList(updatedList)
+
+        // Guardar en Supabase (como un solo registro con array)
+        const medRecord = { id: 'medications-list', medications: updatedList }
+        await saveToSupabase('medications', 'finanzas_journal_med_list', medRecord, [medRecord])
+
         setNewMedName('')
     }
 
@@ -99,39 +147,44 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
     const handleAddTccEntry = async (e) => {
         e.preventDefault()
         let finalRefutation = newTccEntry.refutation
-        if (!finalRefutation) {
+
+        // Solo simular si es nuevo o si el pensamiento cambió significativamente y no hay refutación
+        if (!editingId || !finalRefutation) {
             finalRefutation = await simulateAIResponse(newTccEntry.automaticThought)
         }
-        const entry = { id: crypto.randomUUID(), ...newTccEntry, refutation: finalRefutation }
-        setTccEntries([entry, ...tccEntries])
-        setIsModalOpen(false)
-        setNewTccEntry({
-            date: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-            situation: '',
-            emotions: '',
-            automaticThought: '',
-            distortion: '',
-            refutation: '',
-            reevaluation: ''
-        })
+
+        const entry = editingId
+            ? { ...newTccEntry, updated_at: new Date().toISOString() }
+            : { id: crypto.randomUUID(), ...newTccEntry, refutation: finalRefutation, created_at: new Date().toISOString() }
+
+        const updatedEntries = editingId
+            ? tccEntries.map(e => e.id === editingId ? entry : e)
+            : [entry, ...tccEntries]
+
+        setTccEntries(updatedEntries)
+
+        // Guardar en Supabase
+        await saveToSupabase('journal_tcc', 'finanzas_journal_cbt', entry, updatedEntries)
+
+        closeModal()
     }
 
-    const handleAddLogEntry = (e) => {
+    const handleAddLogEntry = async (e) => {
         e.preventDefault()
-        const entry = { id: crypto.randomUUID(), ...newLogEntry }
-        setLogEntries([entry, ...logEntries])
-        setIsModalOpen(false)
-        const resetMeds = {}
-        medicationList.forEach(m => { resetMeds[m] = false })
-        setNewLogEntry({
-            date: format(new Date(), "yyyy-MM-dd"),
-            anxietyLevel: 5,
-            insomniaLevel: 0,
-            medications: resetMeds,
-            meditation: { morning: 0, afternoon: 0, night: 0 },
-            diary_note: '',
-            symptoms: ''
-        })
+        const entry = editingId
+            ? { ...newLogEntry, updated_at: new Date().toISOString() }
+            : { id: crypto.randomUUID(), ...newLogEntry, created_at: new Date().toISOString() }
+
+        const updatedEntries = editingId
+            ? logEntries.map(e => e.id === editingId ? entry : e)
+            : [entry, ...logEntries]
+
+        setLogEntries(updatedEntries)
+
+        // Guardar en Supabase
+        await saveToSupabase('journal_health_log', 'finanzas_journal_health_log', entry, updatedEntries)
+
+        closeModal()
     }
 
     const deleteTccEntry = async (id) => {
@@ -281,7 +334,10 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                 <h4 className="font-black text-slate-800 text-base">Reestructuración Cognitiva</h4>
                                             </div>
                                         </div>
-                                        <button onClick={() => deleteTccEntry(entry.id)} className="p-3 text-slate-200 hover:text-rose-500 transition-colors bg-white rounded-2xl shadow-sm"><Trash2 size={20} /></button>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => openEditModal(entry, 'tcc')} className="p-3 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded-2xl shadow-sm border border-slate-50"><Edit3 size={20} /></button>
+                                            <button onClick={() => deleteTccEntry(entry.id)} className="p-3 text-slate-400 hover:text-rose-500 transition-colors bg-white rounded-2xl shadow-sm border border-slate-50"><Trash2 size={20} /></button>
+                                        </div>
                                     </div>
                                     <div className="grid grid-cols-1 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-50">
                                         <div className="p-10 space-y-8">
@@ -355,7 +411,10 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-5 text-center">
-                                                        <button onClick={() => deleteLogEntry(entry.id)} className="p-2 text-slate-200 hover:text-rose-500 transition-colors bg-white rounded-xl shadow-sm border border-slate-50"><Trash2 size={16} /></button>
+                                                        <div className="flex items-center justify-center gap-2">
+                                                            <button onClick={() => openEditModal(entry, 'log')} className="p-2 text-slate-400 hover:text-blue-600 transition-colors bg-white rounded-xl shadow-sm border border-slate-50"><Edit3 size={16} /></button>
+                                                            <button onClick={() => deleteLogEntry(entry.id)} className="p-2 text-slate-200 hover:text-rose-500 transition-colors bg-white rounded-xl shadow-sm border border-slate-50"><Trash2 size={16} /></button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))
@@ -371,14 +430,19 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
             <AnimatePresence>
                 {isModalOpen && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl" onClick={() => setIsModalOpen(false)} />
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/80 backdrop-blur-xl" onClick={closeModal} />
                         <motion.div initial={{ opacity: 0, scale: 0.95, y: 40 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 40 }} className="relative bg-white rounded-[4rem] shadow-2xl w-full max-w-6xl overflow-hidden max-h-[90vh] flex flex-col">
                             <div className="px-12 py-8 border-b border-slate-50 flex items-center justify-between shrink-0 bg-slate-50/50">
-                                <div className="flex gap-4 p-2 bg-slate-200/50 rounded-[2rem]">
-                                    <button onClick={() => setActiveTab('tcc')} className={`px-10 py-3 rounded-[1.5rem] text-sm font-black transition-all ${activeTab === 'tcc' ? 'bg-white shadow-lg text-violet-600' : 'text-slate-500'}`}>Desafío TCC</button>
-                                    <button onClick={() => setActiveTab('log')} className={`px-10 py-3 rounded-[1.5rem] text-sm font-black transition-all ${activeTab === 'log' ? 'bg-white shadow-lg text-emerald-600' : 'text-slate-500'}`}>Bitácora Médica</button>
+                                <div className="flex flex-col">
+                                    <h3 className="text-2xl font-black text-slate-900 italic tracking-tight uppercase">
+                                        {editingId ? 'Editar Registro' : 'Nuevo Registro'}
+                                    </h3>
+                                    <div className="flex gap-4 mt-4 p-2 bg-slate-200/50 rounded-[2rem] w-fit">
+                                        <button onClick={() => setActiveTab('tcc')} className={`px-10 py-3 rounded-[1.5rem] text-sm font-black transition-all ${activeTab === 'tcc' ? 'bg-white shadow-lg text-violet-600' : 'text-slate-500'}`}>Desafío TCC</button>
+                                        <button onClick={() => setActiveTab('log')} className={`px-10 py-3 rounded-[1.5rem] text-sm font-black transition-all ${activeTab === 'log' ? 'bg-white shadow-lg text-emerald-600' : 'text-slate-500'}`}>Bitácora Médica</button>
+                                    </div>
                                 </div>
-                                <button onClick={() => setIsModalOpen(false)} className="p-4 text-slate-400 hover:bg-white rounded-full transition-all shadow-sm"><X size={32} /></button>
+                                <button onClick={closeModal} className="p-4 text-slate-400 hover:bg-white rounded-full transition-all shadow-sm"><X size={32} /></button>
                             </div>
 
                             <div className="p-12 overflow-y-auto custom-scrollbar flex-1 bg-white">
@@ -394,7 +458,9 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                 <div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Distorsión</label><select className="input-field !bg-slate-50 !border-none !font-black !py-5 !px-8 !rounded-[2rem] shadow-inner" value={newTccEntry.distortion} onChange={e => setNewTccEntry({ ...newTccEntry, distortion: e.target.value })}><option value="">¿Cuál detectas?</option>{DISTORTIONS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
                                             </div>
                                         </div>
-                                        <button type="submit" disabled={isThinking} className="w-full bg-violet-600 text-white font-black py-8 rounded-[3rem] shadow-2xl transition-all text-2xl flex items-center justify-center gap-4">{isThinking ? <RefreshCw className="animate-spin" /> : 'Guardar y Analizar'}</button>
+                                        <button type="submit" disabled={isThinking} className="w-full bg-violet-600 text-white font-black py-8 rounded-[3rem] shadow-2xl transition-all text-2xl flex items-center justify-center gap-4">
+                                            {isThinking ? <RefreshCw className="animate-spin" /> : (editingId ? 'Actualizar Registro' : 'Guardar y Analizar')}
+                                        </button>
                                     </form>
                                 ) : (
                                     <form onSubmit={handleAddLogEntry} className="space-y-12">
@@ -481,7 +547,9 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                 <Calendar className="text-slate-500" size={24} />
                                                 <input type="date" className="bg-transparent font-black text-xl outline-none w-full cursor-pointer invert" value={newLogEntry.date} onChange={e => setNewLogEntry({ ...newLogEntry, date: e.target.value })} />
                                             </div>
-                                            <button type="submit" className="w-full bg-emerald-600 text-white py-8 text-2xl font-black rounded-[4rem] shadow-2xl hover:scale-[1.02] transition-all duration-700">Guardar Registro Médico</button>
+                                            <button type="submit" className="w-full bg-emerald-600 text-white py-8 text-2xl font-black rounded-[4rem] shadow-2xl hover:scale-[1.02] transition-all duration-700">
+                                                {editingId ? 'Actualizar Registro Médico' : 'Guardar Registro Médico'}
+                                            </button>
                                         </div>
                                     </form>
                                 )}

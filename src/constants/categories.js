@@ -5,7 +5,8 @@ export const DEFAULT_CATEGORIES = {
         { id: 'inc_uber', name: 'Uber', icon: '🚗', color: '#16a085' },
         { id: 'inc_indrive', name: 'Indrive', icon: '🚕', color: '#1abc9c' },
         { id: 'inc_auditoria', name: 'Servicios Auditoria', icon: '📋', color: '#3498db' },
-        { id: 'inc_interes', name: 'Interes', icon: '📈', color: '#9b59b6' }
+        { id: 'inc_interes', name: 'Interes', icon: '📈', color: '#9b59b6' },
+        { id: 'others', name: 'Otros', icon: '📄', color: '#95a5a6' }
     ],
     expense: [
         { id: 'exp_super', name: 'Super', icon: '🛒', color: '#e74c3c' },
@@ -22,6 +23,15 @@ export const DEFAULT_CATEGORIES = {
         { id: 'exp_moto', name: 'Reparaciones moto', icon: '🏍️', color: '#d63031' },
         { id: 'exp_carro', name: 'Reparaciones carro', icon: '🚗', color: '#cf6a87' },
         { id: 'exp_casa', name: 'Reparaciones Casa', icon: '🏠', color: '#fa983a' },
-        { id: 'exp_activos', name: 'Activos', icon: '💎', color: '#6a89cc' }
+        { id: 'exp_activos', name: 'Activos', icon: '💎', color: '#6a89cc' },
+        { id: 'others', name: 'Otros', icon: '📄', color: '#95a5a6' }
     ]
+};
+
+// Categoría especial para transferencias entre cuentas
+export const TRANSFER_CATEGORY = {
+    id: 'transfer',
+    name: 'Transferencia',
+    icon: '🔄',
+    color: '#3498db'
 };

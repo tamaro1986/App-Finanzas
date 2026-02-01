@@ -66,7 +66,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
     }
 
-    const handleAddManualPayment = (e) => {
+    const handleAddManualPayment = async (e) => {
         e.preventDefault()
         const amount = parseFloat(extraPayment.amount)
         if (isNaN(amount) || amount <= 0) return
@@ -89,7 +89,13 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         })
 
         setAccounts(updatedAccounts)
-        localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
+
+        // Guardar la cuenta actualizada en Supabase
+        const updatedAccount = updatedAccounts.find(acc => acc.id === selectedDebtId)
+        if (updatedAccount) {
+            await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
+        }
+
         setIsExtraPaymentModalOpen(false)
         setExtraPayment({
             amount: '',

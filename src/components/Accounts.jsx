@@ -5,13 +5,15 @@ import React, { useState, useEffect } from 'react'
 import { Plus, CreditCard, Wallet, Trash2 } from 'lucide-react'
 // Importar funciones de sincronización con Supabase
 import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
+import { useSyncNotifications } from './SyncNotification'
 
 // ============================================================================
 // COMPONENTE: Accounts
 // PROPÓSITO: Gestionar cuentas bancarias, efectivo, tarjetas, etc.
 // CONECTADO A: Supabase tabla 'accounts' + localStorage como fallback
 // ============================================================================
-const Accounts = ({ accounts, setAccounts }) => {
+const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }) => {
+    const { addNotification } = useSyncNotifications()
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newAccount, setNewAccount] = useState({
         name: '',
@@ -64,7 +66,14 @@ const Accounts = ({ accounts, setAccounts }) => {
         setAccounts(updatedAccounts)
 
         // Sincronizar con Supabase (asíncrono, no bloqueante)
-        await saveToSupabase('accounts', 'finanzas_accounts', processedAccount, updatedAccounts)
+        const result = await saveToSupabase('accounts', 'finanzas_accounts', processedAccount, updatedAccounts)
+
+        // Feedback de sincronización
+        if (result && !result.savedToCloud) {
+            addNotification('Cuenta guardada localmente. Se sincronizará cuando haya conexión.', 'warning')
+        } else if (result && result.savedToCloud) {
+            addNotification('Cuenta creada y sincronizada correctamente.', 'success')
+        }
 
         // Cerrar modal
         setIsModalOpen(false)
@@ -103,7 +112,13 @@ const Accounts = ({ accounts, setAccounts }) => {
             setAccounts(updatedAccounts)
 
             // Sincronizar eliminación con Supabase
-            await deleteFromSupabase('accounts', 'finanzas_accounts', id, updatedAccounts)
+            const result = await deleteFromSupabase('accounts', 'finanzas_accounts', id, updatedAccounts)
+
+            if (result === true) {
+                addNotification('Cuenta eliminada correctamente.', 'success')
+            } else {
+                addNotification('Eliminado localmente. No se pudo sincronizar el borrado con la nube.', 'warning')
+            }
         }
     }
 
@@ -131,14 +146,24 @@ const Accounts = ({ accounts, setAccounts }) => {
                     </div>
                 ) : (
                     accounts.map((acc) => (
-                        <div key={acc.id} className="card relative group overflow-hidden">
+                        <div
+                            key={acc.id}
+                            onClick={() => {
+                                setSelectedAccountId(acc.id)
+                                setActiveView('transactions')
+                            }}
+                            className="card relative group overflow-hidden cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all border-transparent hover:border-slate-200"
+                        >
                             <div className="absolute top-0 left-0 w-1.5 h-full" style={{ backgroundColor: acc.color }} />
                             <div className="flex justify-between items-start mb-4">
                                 <div className="p-2 bg-slate-50 rounded-lg text-slate-600">
                                     <CreditCard size={20} />
                                 </div>
                                 <button
-                                    onClick={() => deleteAccount(acc.id)}
+                                    onClick={(e) => {
+                                        e.stopPropagation() // Evitar que el clic en eliminar active la navegación
+                                        deleteAccount(acc.id)
+                                    }}
                                     className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-all opacity-0 group-hover:opacity-100"
                                 >
                                     <Trash2 size={16} />

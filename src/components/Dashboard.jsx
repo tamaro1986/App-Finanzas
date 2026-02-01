@@ -1,12 +1,10 @@
 // ============================================================================
 // IMPORTS: React, iconos, utilidades de fecha y sincronización con Supabase
 // ============================================================================
-import React, { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock } from 'lucide-react'
+import React from 'react'
+import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock, PieChart } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-// Importar función para inicializar datos desde Supabase
-import { initializeData } from '../lib/supabaseSync'
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     <div className="card group hover:border-blue-200 transition-all duration-300">
@@ -30,7 +28,7 @@ const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     </div>
 )
 
-const Dashboard = ({ transactions = [] }) => {
+const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
     // Calcular estadísticas basadas en las transacciones globales
     const currentMonth = format(new Date(), 'yyyy-MM')
 
@@ -44,11 +42,10 @@ const Dashboard = ({ transactions = [] }) => {
         .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth))
         .reduce((sum, t) => sum + t.amount, 0)
 
-    // Calcular balance total (todos los tiempos)
-    const balance = transactions.reduce((sum, t) => {
-        if (t.type === 'income') return sum + t.amount
-        if (t.type === 'expense') return sum - t.amount
-        return sum
+    // El Balance Total debe ser la suma real de los saldos de todas las cuentas
+    const totalBalance = accounts.reduce((sum, acc) => {
+        if (acc.type === 'Préstamo') return sum - acc.balance;
+        return sum + acc.balance;
     }, 0)
 
     // Obtener las 5 transacciones más recientes
@@ -56,8 +53,7 @@ const Dashboard = ({ transactions = [] }) => {
         .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, 5)
 
-    const stats = { balance, income, expense, recentTransactions }
-
+    const stats = { balance: totalBalance, income, expense, recentTransactions }
     const todayStr = format(new Date(), "EEEE, d 'de' MMMM yyyy", { locale: es })
 
     return (
@@ -97,14 +93,49 @@ const Dashboard = ({ transactions = [] }) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="card min-h-[350px] flex flex-col items-center justify-center text-center p-10 border-dashed border-2 hover:border-slate-300 transition-colors">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-400">
-                        <TrendingUp size={32} />
+                {/* Nueva Tarjeta de Análisis por Categoría */}
+                <div
+                    onClick={() => setActiveView('analytics')}
+                    className="card min-h-[350px] flex flex-col items-center justify-center text-center p-10 border-dashed border-2 hover:border-blue-200 hover:bg-blue-50/10 cursor-pointer transition-all group"
+                >
+                    <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-blue-400 group-hover:scale-110 group-hover:bg-blue-100 transition-all">
+                        <PieChart size={32} />
                     </div>
-                    <h4 className="font-bold text-slate-900 mb-1">Análisis de Gastos</h4>
-                    <p className="text-sm text-slate-500 max-w-xs">Tus gastos de {format(new Date(), 'MMMM', { locale: es })} aparecen aquí.</p>
-                    <div className="mt-8 text-2xl font-bold text-slate-900">
+                    <h4 className="font-bold text-slate-900 mb-1">Análisis por Categoría</h4>
+                    <p className="text-sm text-slate-500 max-w-xs">Haz clic para ver la distribución detallada de tus ingresos y gastos por categoría.</p>
+                    <div className="mt-8 text-2xl font-black text-slate-900 italic">
                         ${stats.expense.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </div>
+                </div>
+
+                <div className="card min-h-[350px] p-0 flex flex-col">
+                    <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                        <h4 className="font-bold text-slate-900">Estado de Cuentas</h4>
+                        <Wallet size={18} className="text-slate-400" />
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        {accounts.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full p-10 text-center">
+                                <p className="text-sm text-slate-500 font-medium">No hay cuentas registradas.</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-slate-50">
+                                {accounts.map((acc) => (
+                                    <div key={acc.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: acc.color }} />
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-900">{acc.name}</p>
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{acc.type}</p>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm font-bold text-slate-900">
+                                            ${acc.balance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -149,4 +180,3 @@ const Dashboard = ({ transactions = [] }) => {
 }
 
 export default Dashboard
-
