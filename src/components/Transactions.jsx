@@ -989,7 +989,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     }
 
     const filteredTransactions = transactions.filter(t => {
-        const matchesSearch = t.note.toLowerCase().includes(searchQuery.toLowerCase())
+        const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
         const matchesType = filterType === 'all' || t.type === filterType
         const matchesAccount = !selectedAccountId || t.accountId === selectedAccountId
         return matchesSearch && matchesType && matchesAccount
@@ -1052,7 +1052,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         // El resultado ya está filtrado por cuenta y tiene el saldo por línea
         return results.filter(t => {
             if (t.isInitialBalance) return searchQuery === '' && filterType === 'all'
-            const matchesSearch = t.note.toLowerCase().includes(searchQuery.toLowerCase())
+            const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
             const matchesType = filterType === 'all' || t.type === filterType
             return matchesSearch && matchesType
         })

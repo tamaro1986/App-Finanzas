@@ -208,13 +208,13 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
     }
 
     const filteredTcc = tccEntries.filter(e =>
-        e.situation.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.automaticThought.toLowerCase().includes(searchQuery.toLowerCase())
+        (e.situation || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.automaticThought || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
 
     const filteredLog = logEntries.filter(e =>
-        e.diary_note.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        e.symptoms.toLowerCase().includes(searchQuery.toLowerCase())
+        (e.diary_note || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.symptoms || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
 
     const AnxietyTrendChart = () => {
