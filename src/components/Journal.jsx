@@ -406,8 +406,8 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                     <td className="px-6 py-5 border-r border-slate-100 text-center bg-amber-50/20">{entry.meditation?.night > 0 ? `${entry.meditation.night}'` : '-'}</td>
                                                     <td className="px-8 py-5 whitespace-normal min-w-[300px]">
                                                         <div className="flex flex-col gap-1">
-                                                            <p className="italic text-slate-500 font-medium leading-relaxed">"{entry.diary_note || 'Sin notas.'}"</p>
-                                                            {entry.symptoms && <p className="text-rose-400 text-[10px] font-black uppercase tracking-tighter mt-1">{entry.symptoms}</p>}
+                                                            <p className="italic text-slate-500 font-medium leading-relaxed">"{typeof entry.diary_note === 'string' ? entry.diary_note : 'Sin notas.'}"</p>
+                                                            {entry.symptoms && <p className="text-rose-400 text-[10px] font-black uppercase tracking-tighter mt-1">{typeof entry.symptoms === 'string' ? entry.symptoms : ''}</p>}
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-5 text-center">
