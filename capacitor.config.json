@@ -1,5 +1,15 @@
 {
-  "appId": "com.negociosgarcia.app",
-  "appName": "NegociosGarcia",
-  "webDir": "dist"
+  "appId": "com.finanzaspro.app",
+  "appName": "FinanzasPro",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#1e293b",
+      "showSpinner": false
+    }
+  }
 }

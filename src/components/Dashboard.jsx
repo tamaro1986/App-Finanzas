@@ -1,9 +1,9 @@
 // ============================================================================
 // IMPORTS: React, iconos, utilidades de fecha y sincronización con Supabase
 // ============================================================================
-import React from 'react'
-import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock, PieChart } from 'lucide-react'
-import { format } from 'date-fns'
+import React, { useState } from 'react'
+import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock, PieChart, ChevronLeft, ChevronRight } from 'lucide-react'
+import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
@@ -29,17 +29,32 @@ const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
 )
 
 const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
-    // Calcular estadísticas basadas en las transacciones globales
-    const currentMonth = format(new Date(), 'yyyy-MM')
+    // Estado para período seleccionado
+    const [selectedPeriod, setSelectedPeriod] = useState(format(new Date(), 'yyyy-MM'))
 
-    // Calcular ingresos del mes actual (excluyendo transferencias)
+    // Navegación de meses
+    const handlePrevMonth = () => {
+        const prev = subMonths(parseISO(selectedPeriod + '-01'), 1)
+        setSelectedPeriod(format(prev, 'yyyy-MM'))
+    }
+
+    const handleNextMonth = () => {
+        const next = subMonths(parseISO(selectedPeriod + '-01'), -1)
+        setSelectedPeriod(format(next, 'yyyy-MM'))
+    }
+
+    // Calcular estadísticas basadas en el período seleccionado
+    const currentMonth = format(new Date(), 'yyyy-MM')
+    const isCurrentMonth = selectedPeriod === currentMonth
+
+    // Calcular ingresos del período seleccionado (excluyendo transferencias)
     const income = transactions
-        .filter(t => t.type === 'income' && t.date.startsWith(currentMonth) && !t.isTransfer)
+        .filter(t => t.type === 'income' && t.date.startsWith(selectedPeriod) && !t.isTransfer)
         .reduce((sum, t) => sum + t.amount, 0)
 
-    // Calcular gastos del mes actual (excluyendo transferencias)
+    // Calcular gastos del período seleccionado (excluyendo transferencias)
     const expense = transactions
-        .filter(t => t.type === 'expense' && t.date.startsWith(currentMonth) && !t.isTransfer)
+        .filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer)
         .reduce((sum, t) => sum + t.amount, 0)
 
     // El Balance Total debe ser la suma real de los saldos de todas las cuentas
@@ -63,10 +78,31 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
                     <h2 className="text-3xl font-bold text-slate-900 tracking-tight">¡Hola, Enrique! 👋</h2>
                     <p className="text-slate-500 mt-1 font-medium">Esto es lo que está pasando con tu dinero hoy.</p>
                 </div>
-                <div className="hidden md:block">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 capitalize">
-                        {todayStr}
-                    </p>
+
+                {/* Selector de Mes */}
+                <div className="flex items-center gap-3">
+                    {!isCurrentMonth && (
+                        <span className="px-2 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-widest rounded-full border border-amber-200">
+                            Histórico
+                        </span>
+                    )}
+                    <div className="flex items-center bg-slate-50 rounded-2xl p-1 border border-slate-100 shadow-sm">
+                        <button
+                            onClick={handlePrevMonth}
+                            className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-blue-600"
+                        >
+                            <ChevronLeft size={20} />
+                        </button>
+                        <span className="px-4 font-black text-slate-700 text-sm uppercase tracking-tight italic min-w-[140px] text-center capitalize">
+                            {format(parseISO(selectedPeriod + '-01'), 'MMMM yyyy', { locale: es })}
+                        </span>
+                        <button
+                            onClick={handleNextMonth}
+                            className="p-2 hover:bg-white hover:shadow-sm rounded-xl transition-all text-slate-400 hover:text-blue-600"
+                        >
+                            <ChevronRight size={20} />
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -79,13 +115,13 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
                     colorClass="bg-blue-600 text-blue-600"
                 />
                 <StatCard
-                    title="Ingresos del Mes"
+                    title={`Ingresos de ${format(parseISO(selectedPeriod + '-01'), 'MMMM', { locale: es })}`}
                     amount={stats.income}
                     icon={TrendingUp}
                     colorClass="bg-emerald-600 text-emerald-600"
                 />
                 <StatCard
-                    title="Gastos del Mes"
+                    title={`Gastos de ${format(parseISO(selectedPeriod + '-01'), 'MMMM', { locale: es })}`}
                     amount={stats.expense}
                     icon={TrendingDown}
                     colorClass="bg-rose-600 text-rose-600"

@@ -674,53 +674,55 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                             exit={{ opacity: 0, scale: 0.9, y: 20 }}
                             className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
                         >
-                            <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between">
+                            <div className="px-10 py-8 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
                                 <h3 className="text-2xl font-black text-slate-900 italic tracking-tight uppercase">Nueva Categoría</h3>
                                 <button onClick={() => setIsModalOpen(false)} className="p-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-2xl transition-all">
                                     <X size={24} />
                                 </button>
                             </div>
 
-                            <form onSubmit={handleAddCategory} className="p-10 space-y-8">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setNewCategory({ ...newCategory, type: 'income' })}
-                                        className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'income' ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
-                                    >
-                                        Ingreso
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setNewCategory({ ...newCategory, type: 'expense' })}
-                                        className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'expense' ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
-                                    >
-                                        Gasto
-                                    </button>
+                            <form onSubmit={handleAddCategory} className="flex flex-col max-h-[calc(90vh-120px)]">
+                                <div className="p-10 space-y-8 overflow-y-auto">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setNewCategory({ ...newCategory, type: 'income' })}
+                                            className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'income' ? 'bg-emerald-500 text-white border-emerald-500 shadow-lg shadow-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                        >
+                                            Ingreso
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setNewCategory({ ...newCategory, type: 'expense' })}
+                                            className={`py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all border-2 ${newCategory.type === 'expense' ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                        >
+                                            Gasto
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Descripción</label>
+                                            <input type="text" autoFocus required placeholder="Ej: Supermercado, Renta..." className="input-field !text-lg !font-bold" value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <IconPicker
+                                                selectedIcon={newCategory.icon}
+                                                onSelectIcon={(icon) => setNewCategory({ ...newCategory, icon })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Meta Mensual ($)</label>
+                                            <input type="number" required placeholder="0.00" className="input-field !text-3xl !font-black !py-4" value={newCategory.amount} onChange={(e) => setNewCategory({ ...newCategory, amount: e.target.value })} />
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="space-y-6">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Descripción</label>
-                                        <input type="text" autoFocus required placeholder="Ej: Supermercado, Renta..." className="input-field !text-lg !font-bold" value={newCategory.name} onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <IconPicker
-                                            selectedIcon={newCategory.icon}
-                                            onSelectIcon={(icon) => setNewCategory({ ...newCategory, icon })}
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Meta Mensual ($)</label>
-                                        <input type="number" required placeholder="0.00" className="input-field !text-3xl !font-black !py-4" value={newCategory.amount} onChange={(e) => setNewCategory({ ...newCategory, amount: e.target.value })} />
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4 pt-4">
+                                <div className="flex gap-4 px-10 pb-10 pt-4 border-t border-slate-100 bg-slate-50/50">
                                     <button
                                         type="button"
                                         onClick={() => setIsModalOpen(false)}
-                                        className="flex-1 py-4 text-slate-500 font-bold hover:bg-slate-50 rounded-2xl transition-all"
+                                        className="flex-1 py-4 text-slate-500 font-bold hover:bg-white rounded-2xl transition-all border border-transparent hover:border-slate-200"
                                     >
                                         Cancelar
                                     </button>

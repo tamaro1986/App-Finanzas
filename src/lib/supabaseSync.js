@@ -66,9 +66,15 @@ const convertObjectToCamelCase = (obj) => {
 // FUNCIÓN HELPER: convertObjectToSnakeCase
 // PROPÓSITO: Convertir todas las keys de un objeto de camelCase a snake_case
 // FILTRADO: Elimina campos problemáticos que no deben enviarse a Supabase
+// RECURSIVO: Convierte arrays y objetos anidados (CRÍTICO para maintenance_items)
 // ============================================================================
 const convertObjectToSnakeCase = (obj) => {
     if (!obj || typeof obj !== 'object') return obj
+
+    // Si es un array, convertir cada elemento recursivamente
+    if (Array.isArray(obj)) {
+        return obj.map(item => convertObjectToSnakeCase(item))
+    }
 
     const newObj = {}
 
@@ -93,7 +99,7 @@ const convertObjectToSnakeCase = (obj) => {
         }
 
         // 2. Strings vacíos en campos numéricos -> null
-        if (value === '' && (snakeKey.includes('installments') || snakeKey.includes('rate') || snakeKey.includes('amount') || snakeKey.includes('age') || snakeKey.includes('height') || snakeKey.includes('weight') || snakeKey.includes('anxiety') || snakeKey.includes('insomnia'))) {
+        if (value === '' && (snakeKey.includes('installments') || snakeKey.includes('rate') || snakeKey.includes('amount') || snakeKey.includes('age') || snakeKey.includes('height') || snakeKey.includes('weight') || snakeKey.includes('anxiety') || snakeKey.includes('insomnia') || snakeKey.includes('mileage'))) {
             value = null
         }
 
@@ -102,9 +108,12 @@ const convertObjectToSnakeCase = (obj) => {
             value = null
         }
 
-        // 4. Los Arrays/Objetos se mantienen como tales para que el cliente de Supabase 
-        // los maneje automáticamente como JSONB. NO se deben stringificar aquí.
-        // Si el valor es un objeto (y no es nulo o una fecha), lo dejamos pasar tal cual.
+        // 4. NUEVO: Convertir recursivamente objetos y arrays anidados
+        // Esto es CRÍTICO para campos JSONB como maintenance_items
+        // Ejemplo: maintenanceItems[{lastMileage}] -> maintenance_items[{last_mileage}]
+        if (value && typeof value === 'object') {
+            value = convertObjectToSnakeCase(value)
+        }
 
         newObj[snakeKey] = value
     }
@@ -312,7 +321,14 @@ export const saveToSupabase = async (tableName, localStorageKey, item, allItems)
 
         // Si hubo error en Supabase, lanzar excepción
         if (error) {
-            console.error(`Supabase error (${tableName}):`, error)
+            // Logging detallado para debugging
+            console.error(`❌ Supabase error (${tableName}):`, {
+                message: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint,
+                sentData: itemWithUserId  // 🔍 Debug: mostrar qué se envió
+            })
             throw error
         }
 
@@ -326,7 +342,19 @@ export const saveToSupabase = async (tableName, localStorageKey, item, allItems)
 
         // Mostrar advertencia al usuario
         const errorMsg = error.message || 'Error desconocido'
-        console.warn(`⚠️ ADVERTENCIA: Los datos se guardaron SOLO LOCALMENTE. Error de sincronización: ${errorMsg}`)
+
+        // Advertencia visual mejorada
+        console.warn('%c⚠️ DATOS GUARDADOS SOLO LOCALMENTE',
+            'background: #fbbf24; color: black; font-size: 14px; padding: 5px; font-weight: bold;')
+
+        // Tabla de resumen del error
+        console.table({
+            'Tabla': tableName,
+            'Error': errorMsg,
+            'Código': error.code || 'N/A',
+            'Guardado Local': 'SÍ ✅',
+            'Guardado Nube': 'NO ❌'
+        })
 
         return {
             success: true, // true porque localStorage funcionó
