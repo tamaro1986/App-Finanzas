@@ -130,8 +130,16 @@ function App() {
 
             // Manejar lista de medicamentos
             if (medListData && Array.isArray(medListData) && medListData.length > 0) {
-                const meds = medListData[0].medications || medListData
-                setMedicationList(Array.isArray(meds) ? meds : [])
+                const firstRow = medListData[0]
+                // Intentar obtener la lista de 'list' (nuevo), 'medications' (viejo) o usar el array directamente si es legacy
+                const meds = firstRow.list || firstRow.medications
+
+                if (Array.isArray(meds)) {
+                    setMedicationList(meds)
+                } else if (typeof firstRow === 'string') {
+                    // Fallback si medListData es directamente un array de strings
+                    setMedicationList(medListData)
+                }
             }
         } catch (error) {
             console.error('Error loading global data:', error)

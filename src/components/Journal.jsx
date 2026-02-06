@@ -380,7 +380,9 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                             <th className="px-6 py-6 border-r border-white/10 text-center bg-rose-600">Ansiedad</th>
                                             <th className="px-6 py-6 border-r border-white/10 text-center bg-rose-800">Insomnio</th>
                                             {medicationList.map(med => (
-                                                <th key={med} className="px-6 py-6 border-r border-white/10 text-center bg-blue-600 min-w-[120px]">{med}</th>
+                                                <th key={typeof med === 'string' ? med : Math.random()} className="px-6 py-6 border-r border-white/10 text-center bg-blue-600 min-w-[120px]">
+                                                    {typeof med === 'string' ? med : 'Med.'}
+                                                </th>
                                             ))}
                                             <th className="px-6 py-6 border-r border-white/10 text-center bg-amber-500">M. MAÑANA</th>
                                             <th className="px-6 py-6 border-r border-white/10 text-center bg-amber-500">M. TARDE</th>
@@ -399,7 +401,9 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                     <td className="px-6 py-5 border-r border-slate-100 text-center"><span className={`px-2 py-1 rounded-md ${entry.anxietyLevel >= 7 ? 'text-rose-600 bg-rose-50' : 'text-slate-400 bg-slate-50'}`}>{entry.anxietyLevel}</span></td>
                                                     <td className="px-6 py-5 border-r border-slate-100 text-center"><span className={`px-2 py-1 rounded-md ${entry.insomniaLevel >= 7 ? 'text-rose-800 bg-slate-100' : 'text-slate-400 bg-slate-50'}`}>{entry.insomniaLevel}</span></td>
                                                     {medicationList.map(med => (
-                                                        <td key={med} className="px-6 py-5 border-r border-slate-100 text-center font-black text-blue-600">{entry.medications?.[med] ? '1' : '-'}</td>
+                                                        <td key={typeof med === 'string' ? med : Math.random()} className="px-6 py-5 border-r border-slate-100 text-center font-black text-blue-600">
+                                                            {entry.medications?.[typeof med === 'string' ? med : ''] ? '1' : '-'}
+                                                        </td>
                                                     ))}
                                                     <td className="px-6 py-5 border-r border-slate-100 text-center bg-amber-50/20">{entry.meditation?.morning > 0 ? `${entry.meditation.morning}'` : '-'}</td>
                                                     <td className="px-6 py-5 border-r border-slate-100 text-center bg-amber-50/20">{entry.meditation?.afternoon > 0 ? `${entry.meditation.afternoon}'` : '-'}</td>
@@ -496,7 +500,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
                                                                 onClick={() => setNewLogEntry({ ...newLogEntry, medications: { ...newLogEntry.medications, [med]: !newLogEntry.medications[med] } })}
                                                                 className={`w-full py-5 rounded-[1.5rem] text-[10px] font-black uppercase transition-all border-4 ${newLogEntry.medications[med] ? 'bg-blue-600 text-white border-blue-600 shadow-xl' : 'bg-white text-blue-200 border-slate-50'}`}
                                                             >
-                                                                {med}
+                                                                {typeof med === 'string' ? med : 'Desconocido'}
                                                             </button>
                                                             <button
                                                                 type="button" onClick={() => removeMedication(med)}
