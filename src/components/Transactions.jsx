@@ -843,11 +843,12 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // ============================================================================
     const downloadTemplate = () => {
         // 1. Hoja Principal: Plantilla con ejemplos reales
-        const headers = ['Fecha (DD/MM/AAAA)', 'Tipo (ingreso/gasto)', 'Monto', 'Categoría', 'Nota', 'Cuenta']
+        const headers = ['Fecha (DD/MM/AAAA)', 'Tipo (ingreso/gasto/transferencia)', 'Monto', 'Categoría', 'Nota', 'Cuenta Origen', 'Es Transferencia (SI/NO)', 'Cuenta Destino']
         const exampleData = [
             headers,
-            ['20/01/2025', 'gasto', 150.50, DEFAULT_CATEGORIES.expense[0]?.name || 'Comida', 'Almuerzo trabajo', accounts[0]?.name || 'Efectivo'],
-            ['21/01/2025', 'ingreso', 5000, DEFAULT_CATEGORIES.income[0]?.name || 'Salario', 'Nómina quincenal', accounts[1]?.name || 'Banco']
+            ['20/01/2025', 'gasto', 150.50, DEFAULT_CATEGORIES.expense[0]?.name || 'Comida', 'Almuerzo trabajo', accounts[0]?.name || 'Efectivo', 'NO', ''],
+            ['21/01/2025', 'ingreso', 5000, DEFAULT_CATEGORIES.income[0]?.name || 'Salario', 'Nómina quincenal', accounts[1]?.name || 'Banco', 'NO', ''],
+            ['22/01/2025', 'transferencia', 1000, 'Transferencia', 'Retiro cajero', accounts[1]?.name || 'Banco', 'SI', accounts[0]?.name || 'Efectivo']
         ]
 
         // 2. Hoja de Catálogos (Referencia para que el usuario sepa qué escribir)
@@ -907,11 +908,14 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         rows.forEach((row, index) => {
             const rowNum = index + 2 // +2 porque slice quitó header y excel es 1-indexed
 
-            // Estructura esperada: [Fecha, Tipo, Monto, Categoría, Nota, Cuenta]
-            const [dateRaw, typeRaw, amountRaw, categoryRaw, noteRaw, accountRaw] = row
+            // Estructura esperada: [Fecha, Tipo, Monto, Categoría, Nota, Cuenta Origen, Es Transferencia, Cuenta Destino]
+            const [dateRaw, typeRaw, amountRaw, categoryRaw, noteRaw, accountRaw, isTransferRaw, toAccountRaw] = row
 
             // Si la fila está vacía, saltar
             if (!dateRaw && !amountRaw) return
+
+            // Detectar si es transferencia
+            const isTransfer = isTransferRaw?.toString().toUpperCase() === 'SI'
 
             // 1. Validar Fecha
             let date = dateRaw
@@ -931,53 +935,103 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 // Si ya está en formato AAAA-MM-DD, dejarlo así
             }
 
-            // 2. Validar Tipo
-            const type = typeRaw?.toString().toLowerCase()
-            if (type !== 'ingreso' && type !== 'gasto') errors.push(`Fila ${rowNum}: Tipo inválido (debe ser 'ingreso' o 'gasto')`)
-
-            // 3. Validar Monto
+            // 2. Validar Monto
             const amount = parseFloat(amountRaw)
             if (isNaN(amount) || amount <= 0) errors.push(`Fila ${rowNum}: Monto inválido`)
 
-            // 4. Validar Categoría (Buscamos ID)
-            const allCats = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
-            let categoryId = ''
-            if (categoryRaw) {
-                const searchName = categoryRaw.toString().trim().toLowerCase()
-                const catFound = allCats.find(c => c.name.toLowerCase() === searchName)
-                categoryId = catFound ? catFound.id : 'others' // Default a 'Otros'
-            } else {
-                errors.push(`Fila ${rowNum}: Falta el nombre de la categoría`)
-            }
-
-            // 5. Validar Cuenta (Buscamos ID)
-            let accountId = ''
-            if (accountRaw) {
-                const searchAcc = accountRaw.toString().trim().toLowerCase()
-                const accFound = accounts.find(a => a.name.trim().toLowerCase() === searchAcc)
-                if (accFound) {
-                    accountId = accFound.id
+            if (isTransfer) {
+                // VALIDACIÓN PARA TRANSFERENCIAS
+                // 3. Validar Cuenta Origen
+                let fromAccountId = ''
+                if (accountRaw) {
+                    const searchAcc = accountRaw.toString().trim().toLowerCase()
+                    const accFound = accounts.find(a => a.name.trim().toLowerCase() === searchAcc)
+                    if (accFound) {
+                        fromAccountId = accFound.id
+                    } else {
+                        errors.push(`Fila ${rowNum}: La cuenta origen '${accountRaw}' no existe.`)
+                    }
                 } else {
-                    errors.push(`Fila ${rowNum}: La cuenta '${accountRaw}' no coincide con ninguna cuenta guardada. Verifica el nombre exacto.`)
+                    errors.push(`Fila ${rowNum}: Falta la cuenta origen para la transferencia.`)
+                }
+
+                // 4. Validar Cuenta Destino
+                let toAccountId = ''
+                if (toAccountRaw) {
+                    const searchAcc = toAccountRaw.toString().trim().toLowerCase()
+                    const accFound = accounts.find(a => a.name.trim().toLowerCase() === searchAcc)
+                    if (accFound) {
+                        toAccountId = accFound.id
+                    } else {
+                        errors.push(`Fila ${rowNum}: La cuenta destino '${toAccountRaw}' no existe.`)
+                    }
+                } else {
+                    errors.push(`Fila ${rowNum}: Falta la cuenta destino para la transferencia.`)
+                }
+
+                // Validar que no sean la misma cuenta
+                if (fromAccountId && toAccountId && fromAccountId === toAccountId) {
+                    errors.push(`Fila ${rowNum}: La cuenta origen y destino no pueden ser la misma.`)
+                }
+
+                if (errors.length === 0 || !errors[errors.length - 1].includes(`Fila ${rowNum}`)) {
+                    validRows.push({
+                        isTransfer: true,
+                        date,
+                        amount,
+                        fromAccountId,
+                        toAccountId,
+                        note: noteRaw || '',
+                        type: 'transfer'
+                    })
                 }
             } else {
-                // Si no se especifica cuenta y solo hay una, usar esa. Si hay varias, error.
-                if (accounts.length === 1) accountId = accounts[0].id
-                else errors.push(`Fila ${rowNum}: No se especificó la cuenta en el Excel y tienes varias registradas.`)
-            }
+                // VALIDACIÓN PARA INGRESOS/GASTOS NORMALES
+                // 3. Validar Tipo
+                const type = typeRaw?.toString().toLowerCase()
+                if (type !== 'ingreso' && type !== 'gasto') errors.push(`Fila ${rowNum}: Tipo inválido (debe ser 'ingreso' o 'gasto')`)
 
-            if (errors.length === 0 || errors[errors.length - 1].split(':')[0] !== `Fila ${rowNum}`) {
-                // Si no hubo errores nuevos para esta fila
-                validRows.push({
-                    id: crypto.randomUUID(),
-                    date,
-                    type: type === 'ingreso' ? 'income' : 'expense',
-                    amount,
-                    categoryId,
-                    accountId,
-                    note: noteRaw || '',
-                    attachment: null
-                })
+                // 4. Validar Categoría (Buscamos ID)
+                const allCats = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
+                let categoryId = ''
+                if (categoryRaw) {
+                    const searchName = categoryRaw.toString().trim().toLowerCase()
+                    const catFound = allCats.find(c => c.name.toLowerCase() === searchName)
+                    categoryId = catFound ? catFound.id : 'others' // Default a 'Otros'
+                } else {
+                    errors.push(`Fila ${rowNum}: Falta el nombre de la categoría`)
+                }
+
+                // 5. Validar Cuenta (Buscamos ID)
+                let accountId = ''
+                if (accountRaw) {
+                    const searchAcc = accountRaw.toString().trim().toLowerCase()
+                    const accFound = accounts.find(a => a.name.trim().toLowerCase() === searchAcc)
+                    if (accFound) {
+                        accountId = accFound.id
+                    } else {
+                        errors.push(`Fila ${rowNum}: La cuenta '${accountRaw}' no coincide con ninguna cuenta guardada. Verifica el nombre exacto.`)
+                    }
+                } else {
+                    // Si no se especifica cuenta y solo hay una, usar esa. Si hay varias, error.
+                    if (accounts.length === 1) accountId = accounts[0].id
+                    else errors.push(`Fila ${rowNum}: No se especificó la cuenta en el Excel y tienes varias registradas.`)
+                }
+
+                if (errors.length === 0 || !errors[errors.length - 1].includes(`Fila ${rowNum}`)) {
+                    // Si no hubo errores nuevos para esta fila
+                    validRows.push({
+                        id: crypto.randomUUID(),
+                        date,
+                        type: type === 'ingreso' ? 'income' : 'expense',
+                        amount,
+                        categoryId,
+                        accountId,
+                        note: noteRaw || '',
+                        attachment: null,
+                        isTransfer: false
+                    })
+                }
             }
         })
 
@@ -989,12 +1043,57 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const confirmImport = async () => {
         if (importPreview.length === 0) return
 
-        // 1. Preparar las nuevas transacciones
-        const newTransactionsList = [...importPreview, ...transactions]
+        // Separar transferencias de transacciones normales
+        const transfers = importPreview.filter(tx => tx.isTransfer)
+        const normalTransactions = importPreview.filter(tx => !tx.isTransfer)
 
-        // 2. Calcular los nuevos balances de las cuentas de forma acumulativa
+        // 1. Preparar transacciones normales
+        const newNormalTransactions = [...normalTransactions, ...transactions]
+
+        // 2. Preparar transacciones de transferencias (crear pares)
+        const transferTransactions = []
+        transfers.forEach(transfer => {
+            const transferId = crypto.randomUUID()
+            const fromAccount = accounts.find(a => a.id === transfer.fromAccountId)
+            const toAccount = accounts.find(a => a.id === transfer.toAccountId)
+
+            // Transacción de salida
+            transferTransactions.push({
+                id: crypto.randomUUID(),
+                transferId,
+                isTransfer: true,
+                type: 'expense',
+                accountId: transfer.fromAccountId,
+                categoryId: 'transfer',
+                amount: transfer.amount,
+                date: transfer.date,
+                note: `Transferencia a ${toAccount?.name || 'Destino'}${transfer.note ? ': ' + transfer.note : ''}`,
+                attachment: null
+            })
+
+            // Transacción de entrada
+            transferTransactions.push({
+                id: crypto.randomUUID(),
+                transferId,
+                isTransfer: true,
+                type: 'income',
+                accountId: transfer.toAccountId,
+                categoryId: 'transfer',
+                amount: transfer.amount,
+                date: transfer.date,
+                note: `Transferencia desde ${fromAccount?.name || 'Origen'}${transfer.note ? ': ' + transfer.note : ''}`,
+                attachment: null
+            })
+        })
+
+        // 3. Combinar todas las transacciones
+        const allNewTransactions = [...transferTransactions, ...normalTransactions, ...transactions]
+
+        // 4. Calcular los nuevos balances de las cuentas
         let updatedAccounts = [...accounts]
-        importPreview.forEach(tx => {
+
+        // Procesar transacciones normales
+        normalTransactions.forEach(tx => {
             updatedAccounts = updatedAccounts.map(acc => {
                 if (acc.id === tx.accountId) {
                     let newBalance = acc.balance
@@ -1009,13 +1108,29 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             })
         })
 
-        // 3. Actualizar estados locales de una sola vez (esto es instantáneo para el usuario)
-        setTransactions(newTransactionsList)
+        // Procesar transferencias
+        transferTransactions.forEach(tx => {
+            updatedAccounts = updatedAccounts.map(acc => {
+                if (acc.id === tx.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = tx.type === 'income' ? acc.balance - tx.amount : acc.balance + tx.amount
+                    } else {
+                        newBalance = tx.type === 'income' ? acc.balance + tx.amount : acc.balance - tx.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+        })
+
+        // 5. Actualizar estados locales
+        setTransactions(allNewTransactions)
         setAccounts(updatedAccounts)
 
-        // 4. Sincronizar masivamente con Supabase
+        // 6. Sincronizar masivamente con Supabase
         // Primero las transacciones (usando syncToSupabase que ahora maneja arrays)
-        const txSyncResult = await syncToSupabase('transactions', 'finanzas_transactions', newTransactionsList)
+        const txSyncResult = await syncToSupabase('transactions', 'finanzas_transactions', allNewTransactions)
 
         // Luego las cuentas con sus nuevos balances
         const accSyncResult = await syncToSupabase('accounts', 'finanzas_accounts', updatedAccounts)
