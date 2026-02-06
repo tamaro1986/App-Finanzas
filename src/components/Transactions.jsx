@@ -598,15 +598,56 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             attachment: null
         }
 
-        // Procesar ambas transacciones
+        // Procesar ambas transacciones en lote para evitar condiciones de carrera en el estado
         try {
-            await processTransaction(tx1)
-            await processTransaction(tx2)
+            // 1. Preparar el nuevo array de transacciones
+            const updatedTransactions = [tx1, tx2, ...transactions]
+
+            // 2. Preparar el nuevo array de cuentas con balances actualizados
+            const updatedAccounts = accounts.map(acc => {
+                if (acc.id === tx1.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = tx1.type === 'income' ? acc.balance - tx1.amount : acc.balance + tx1.amount
+                    } else {
+                        newBalance = tx1.type === 'income' ? acc.balance + tx1.amount : acc.balance - tx1.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                if (acc.id === tx2.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = tx2.type === 'income' ? acc.balance - tx2.amount : acc.balance + tx2.amount
+                    } else {
+                        newBalance = tx2.type === 'income' ? acc.balance + tx2.amount : acc.balance - tx2.amount
+                    }
+                    return { ...acc, balance: newBalance }
+                }
+                return acc
+            })
+
+            // 3. Actualizar estados una sola vez
+            setTransactions(updatedTransactions)
+            setAccounts(updatedAccounts)
+
+            // 4. Sincronizar con Supabase de forma paralela
+            const syncPromises = [
+                saveToSupabase('transactions', 'finanzas_transactions', tx1, updatedTransactions),
+                saveToSupabase('transactions', 'finanzas_transactions', tx2, updatedTransactions),
+                saveToSupabase('accounts', 'finanzas_accounts', updatedAccounts.find(a => a.id === tx1.accountId), updatedAccounts),
+                saveToSupabase('accounts', 'finanzas_accounts', updatedAccounts.find(a => a.id === tx2.accountId), updatedAccounts)
+            ]
+
+            await Promise.all(syncPromises)
+
+            // 5. Crear respaldos
+            createBackup('transactions', updatedTransactions)
+            createBackup('accounts', updatedAccounts)
 
             addNotification(isEditing ? 'Transferencia actualizada exitosamente' : 'Transferencia completada exitosamente', 'success')
             setIsModalOpen(false)
 
-            // Resetear formulario de transferencia
+            // Resetear formularios
             setTransferData({
                 date: format(new Date(), 'yyyy-MM-dd'),
                 fromAccountId: '',
@@ -615,7 +656,6 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 note: ''
             })
 
-            // También resetear newTx para evitar conflictos
             setNewTx({
                 date: format(new Date(), 'yyyy-MM-dd'),
                 accountId: accounts[0]?.id || '',
