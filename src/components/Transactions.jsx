@@ -33,6 +33,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const [filterType, setFilterType] = useState('all')
     const [editingTransaction, setEditingTransaction] = useState(null)
     const [tempInitialBalance, setTempInitialBalance] = useState('')
+    const [isInitialModalOpen, setIsInitialModalOpen] = useState(false)
 
     // Estado para ordenamiento de la tabla
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' })
