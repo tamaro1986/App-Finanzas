@@ -32,8 +32,10 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const [searchQuery, setSearchQuery] = useState('')
     const [filterType, setFilterType] = useState('all')
     const [editingTransaction, setEditingTransaction] = useState(null)
-    const [isInitialModalOpen, setIsInitialModalOpen] = useState(false)
     const [tempInitialBalance, setTempInitialBalance] = useState('')
+
+    // Estado para ordenamiento de la tabla
+    const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' })
 
     // Estados para importación de Excel
     const [importErrors, setImportErrors] = useState([])
@@ -988,12 +990,38 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         setImportErrors([])
     }
 
-    const filteredTransactions = transactions.filter(t => {
-        const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
-        const matchesType = filterType === 'all' || t.type === filterType
-        const matchesAccount = !selectedAccountId || t.accountId === selectedAccountId
-        return matchesSearch && matchesType && matchesAccount
-    })
+    const filteredTransactions = React.useMemo(() => {
+        let result = transactions.filter(t => {
+            const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
+            const matchesType = filterType === 'all' || t.type === filterType
+            const matchesAccount = !selectedAccountId || t.accountId === selectedAccountId
+            return matchesSearch && matchesType && matchesAccount
+        })
+
+        // Aplicar ordenamiento
+        if (sortConfig.key) {
+            result.sort((a, b) => {
+                let aValue = a[sortConfig.key]
+                let bValue = b[sortConfig.key]
+
+                // Manejo especial por tipo de dato
+                if (sortConfig.key === 'amount') {
+                    aValue = parseFloat(aValue) || 0
+                    bValue = parseFloat(bValue) || 0
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1
+                }
+                return 0
+            })
+        }
+        return result
+    }, [transactions, searchQuery, filterType, selectedAccountId, sortConfig])
+
 
     // ============================================================================
     // LÓGICA: Calcular Saldo por Línea
@@ -1050,13 +1078,37 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         })
 
         // El resultado ya está filtrado por cuenta y tiene el saldo por línea
-        return results.filter(t => {
+        let finalResults = results.filter(t => {
             if (t.isInitialBalance) return searchQuery === '' && filterType === 'all'
             const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
             const matchesType = filterType === 'all' || t.type === filterType
             return matchesSearch && matchesType
         })
-    }, [filteredTransactions, selectedAccountId, accounts, transactions, searchQuery, filterType])
+
+        // Aplicar ordenamiento también aquí si no es el orden por defecto (fecha desc)
+        if (sortConfig.key) {
+            finalResults.sort((a, b) => {
+                // El saldo inicial siempre va al final o al principio dependiendo de la dirección? 
+                // Por ahora lo dejamos fijo si es fecha, o lo tratamos como registro especial.
+                if (a.isInitialBalance) return sortConfig.direction === 'desc' ? 1 : -1
+                if (b.isInitialBalance) return sortConfig.direction === 'desc' ? -1 : 1
+
+                let aValue = a[sortConfig.key]
+                let bValue = b[sortConfig.key]
+
+                if (sortConfig.key === 'amount') {
+                    aValue = parseFloat(aValue) || 0
+                    bValue = parseFloat(bValue) || 0
+                }
+
+                if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1
+                if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1
+                return 0
+            })
+        }
+
+        return finalResults
+    }, [filteredTransactions, selectedAccountId, accounts, transactions, searchQuery, filterType, sortConfig])
 
     // Obtener categorías combinadas según el tipo de transacción
     const categories = getCombinedCategories(newTx.type)
@@ -1154,11 +1206,61 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     <table className="w-full text-left border-collapse">
                         <thead className="bg-slate-50 border-b border-slate-200/60">
                             <tr>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Fecha</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Cuenta</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Categoría</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Nota</th>
-                                <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Monto</th>
+                                <th
+                                    className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                                    onClick={() => setSortConfig({ key: 'date', direction: sortConfig.key === 'date' && sortConfig.direction === 'desc' ? 'asc' : 'desc' })}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Fecha
+                                        <div className={`opacity-0 group-hover:opacity-100 transition-opacity ${sortConfig.key === 'date' ? 'opacity-100' : ''}`}>
+                                            {sortConfig.key === 'date' && sortConfig.direction === 'asc' ? <ArrowUpCircle size={14} className="text-blue-500" /> : <ArrowDownCircle size={14} className="text-slate-400" />}
+                                        </div>
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                                    onClick={() => setSortConfig({ key: 'accountId', direction: sortConfig.key === 'accountId' && sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Cuenta
+                                        <div className={`opacity-0 group-hover:opacity-100 transition-opacity ${sortConfig.key === 'accountId' ? 'opacity-100' : ''}`}>
+                                            {sortConfig.key === 'accountId' && sortConfig.direction === 'asc' ? <ArrowUpCircle size={14} className="text-blue-500" /> : <ArrowDownCircle size={14} className="text-slate-400" />}
+                                        </div>
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                                    onClick={() => setSortConfig({ key: 'categoryId', direction: sortConfig.key === 'categoryId' && sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Categoría
+                                        <div className={`opacity-0 group-hover:opacity-100 transition-opacity ${sortConfig.key === 'categoryId' ? 'opacity-100' : ''}`}>
+                                            {sortConfig.key === 'categoryId' && sortConfig.direction === 'asc' ? <ArrowUpCircle size={14} className="text-blue-500" /> : <ArrowDownCircle size={14} className="text-slate-400" />}
+                                        </div>
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                                    onClick={() => setSortConfig({ key: 'note', direction: sortConfig.key === 'note' && sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Nota
+                                        <div className={`opacity-0 group-hover:opacity-100 transition-opacity ${sortConfig.key === 'note' ? 'opacity-100' : ''}`}>
+                                            {sortConfig.key === 'note' && sortConfig.direction === 'asc' ? <ArrowUpCircle size={14} className="text-blue-500" /> : <ArrowDownCircle size={14} className="text-slate-400" />}
+                                        </div>
+                                    </div>
+                                </th>
+                                <th
+                                    className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer hover:bg-slate-100 transition-colors group"
+                                    onClick={() => setSortConfig({ key: 'amount', direction: sortConfig.key === 'amount' && sortConfig.direction === 'asc' ? 'desc' : 'asc' })}
+                                >
+                                    <div className="flex items-center justify-end gap-2">
+                                        Monto
+                                        <div className={`opacity-0 group-hover:opacity-100 transition-opacity ${sortConfig.key === 'amount' ? 'opacity-100' : ''}`}>
+                                            {sortConfig.key === 'amount' && sortConfig.direction === 'asc' ? <ArrowUpCircle size={14} className="text-blue-500" /> : <ArrowDownCircle size={14} className="text-slate-400" />}
+                                        </div>
+                                    </div>
+                                </th>
                                 {selectedAccountId && <th className="px-6 py-4 text-right text-xs font-bold text-blue-600 uppercase tracking-widest">Saldo</th>}
                                 <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
                             </tr>
