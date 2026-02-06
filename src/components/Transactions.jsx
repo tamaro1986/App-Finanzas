@@ -842,20 +842,24 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // FUNCIONES PARA EXCEL: Descarga de plantilla y Carga de datos
     // ============================================================================
     const downloadTemplate = () => {
-        // 1. Hoja Principal: Plantilla con ejemplos reales
+        // 1. Obtener TODAS las categorías (predefinidas + personalizadas del presupuesto)
+        const allIncomeCategories = getCombinedCategories('income')
+        const allExpenseCategories = getCombinedCategories('expense')
+
+        const catIncome = allIncomeCategories.map(c => c.name)
+        const catExpense = allExpenseCategories.map(c => c.name)
+        const accountNames = accounts.map(a => a.name)
+
+        // 2. Hoja Principal: Plantilla con ejemplos reales
         const headers = ['Fecha (DD/MM/AAAA)', 'Tipo (ingreso/gasto/transferencia)', 'Monto', 'Categoría', 'Nota', 'Cuenta Origen', 'Es Transferencia (SI/NO)', 'Cuenta Destino']
         const exampleData = [
             headers,
-            ['20/01/2025', 'gasto', 150.50, DEFAULT_CATEGORIES.expense[0]?.name || 'Comida', 'Almuerzo trabajo', accounts[0]?.name || 'Efectivo', 'NO', ''],
-            ['21/01/2025', 'ingreso', 5000, DEFAULT_CATEGORIES.income[0]?.name || 'Salario', 'Nómina quincenal', accounts[1]?.name || 'Banco', 'NO', ''],
+            ['20/01/2025', 'gasto', 150.50, allExpenseCategories[0]?.name || 'Comida', 'Almuerzo trabajo', accounts[0]?.name || 'Efectivo', 'NO', ''],
+            ['21/01/2025', 'ingreso', 5000, allIncomeCategories[0]?.name || 'Salario', 'Nómina quincenal', accounts[1]?.name || 'Banco', 'NO', ''],
             ['22/01/2025', 'transferencia', 1000, 'Transferencia', 'Retiro cajero', accounts[1]?.name || 'Banco', 'SI', accounts[0]?.name || 'Efectivo']
         ]
 
-        // 2. Hoja de Catálogos (Referencia para que el usuario sepa qué escribir)
-        const catIncome = DEFAULT_CATEGORIES.income.map(c => c.name)
-        const catExpense = DEFAULT_CATEGORIES.expense.map(c => c.name)
-        const accountNames = accounts.map(a => a.name)
-
+        // 3. Hoja de Catálogos (Referencia completa)
         const maxRows = Math.max(catIncome.length, catExpense.length, accountNames.length)
         const catalogHeaders = ['Categorías de Ingreso', 'Categorías de Gasto', 'Mis Cuentas']
         const catalogData = [catalogHeaders]
@@ -873,6 +877,79 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         // Crear las hojas
         const wsPlantilla = XLSX.utils.aoa_to_sheet(exampleData)
         const wsCatalogos = XLSX.utils.aoa_to_sheet(catalogData)
+
+        // 4. AGREGAR VALIDACIONES DE DATOS (Filtros/Dropdowns)
+        // Configurar el rango de validación para las filas de datos (desde fila 2 hasta 1000)
+        const dataValidations = []
+
+        // Validación para columna B (Tipo): ingreso/gasto/transferencia
+        dataValidations.push({
+            sqref: 'B2:B1000',
+            type: 'list',
+            formula1: '"ingreso,gasto,transferencia"',
+            showDropDown: true
+        })
+
+        // Validación para columna D (Categoría): todas las categorías
+        const allCategories = [...new Set([...catIncome, ...catExpense, 'Transferencia'])]
+        dataValidations.push({
+            sqref: 'D2:D1000',
+            type: 'list',
+            formula1: `"${allCategories.join(',')}"`,
+            showDropDown: true
+        })
+
+        // Validación para columna F (Cuenta Origen): todas las cuentas
+        if (accountNames.length > 0) {
+            dataValidations.push({
+                sqref: 'F2:F1000',
+                type: 'list',
+                formula1: `"${accountNames.join(',')}"`,
+                showDropDown: true
+            })
+        }
+
+        // Validación para columna G (Es Transferencia): SI/NO
+        dataValidations.push({
+            sqref: 'G2:G1000',
+            type: 'list',
+            formula1: '"SI,NO"',
+            showDropDown: true
+        })
+
+        // Validación para columna H (Cuenta Destino): todas las cuentas
+        if (accountNames.length > 0) {
+            dataValidations.push({
+                sqref: 'H2:H1000',
+                type: 'list',
+                formula1: `"${accountNames.join(',')}"`,
+                showDropDown: true
+            })
+        }
+
+        // Aplicar validaciones a la hoja
+        if (!wsPlantilla['!dataValidation']) {
+            wsPlantilla['!dataValidation'] = []
+        }
+        wsPlantilla['!dataValidation'] = dataValidations
+
+        // 5. Ajustar anchos de columna para mejor visualización
+        wsPlantilla['!cols'] = [
+            { wch: 18 }, // Fecha
+            { wch: 12 }, // Tipo
+            { wch: 10 }, // Monto
+            { wch: 20 }, // Categoría
+            { wch: 30 }, // Nota
+            { wch: 18 }, // Cuenta Origen
+            { wch: 18 }, // Es Transferencia
+            { wch: 18 }  // Cuenta Destino
+        ]
+
+        wsCatalogos['!cols'] = [
+            { wch: 25 },
+            { wch: 25 },
+            { wch: 25 }
+        ]
 
         // Añadir hojas al libro
         XLSX.utils.book_append_sheet(wb, wsPlantilla, "Plantilla de Movimientos")
