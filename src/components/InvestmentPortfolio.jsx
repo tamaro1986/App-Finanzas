@@ -39,6 +39,7 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
         name: '',
         quantity: '',
         buyPrice: '',
+        commission: '0',
         buyCurrency: 'USD',
         buyDate: format(new Date(), 'yyyy-MM-dd')
     })
@@ -76,6 +77,7 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
             ...newInvestment,
             quantity: parseFloat(newInvestment.quantity),
             buyPrice: parseFloat(newInvestment.buyPrice),
+            commission: parseFloat(newInvestment.commission || 0),
             currentPrice: parseFloat(newInvestment.buyPrice), // Inicialmente = precio de compra
             lastUpdate: Date.now() // Timestamp de última actualización
         }
@@ -107,6 +109,7 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
             name: '',
             quantity: '',
             buyPrice: '',
+            commission: '0',
             buyCurrency: 'USD',
             buyDate: format(new Date(), 'yyyy-MM-dd')
         })
@@ -409,7 +412,8 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
                                     const roi = calculateROI(inv.buyPrice, inv.currentPrice)
                                     const pl = calculatePL(inv.buyPrice, inv.currentPrice, inv.quantity)
                                     const freshness = getDataFreshness(inv.lastUpdate)
-                                    const totalCost = inv.buyPrice * inv.quantity
+                                    const commission = inv.commission || 0
+                                    const totalCost = (inv.buyPrice * inv.quantity) + commission
                                     const currentValue = inv.currentPrice * inv.quantity
 
                                     return (
@@ -507,6 +511,12 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
                                     <div className="space-y-4">
                                         <label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Precio de Compra</label>
                                         <input type="number" required step="any" min="0" placeholder="0.00" className="input-field !bg-slate-50 !border-none !font-black !py-5 !px-6 !rounded-[2rem]" value={newInvestment.buyPrice} onChange={e => setNewInvestment({ ...newInvestment, buyPrice: e.target.value })} />
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Comisión de Compra</label>
+                                        <input type="number" step="any" min="0" placeholder="0.00" className="input-field !bg-slate-50 !border-none !font-black !py-5 !px-6 !rounded-[2rem]" value={newInvestment.commission} onChange={e => setNewInvestment({ ...newInvestment, commission: e.target.value })} />
+                                        <p className="text-xs text-slate-500 italic px-2">Comisión cobrada por el broker al comprar</p>
                                     </div>
 
                                     <div className="space-y-4">

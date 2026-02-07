@@ -9,7 +9,8 @@ ALTER TABLE public.investments
 ADD COLUMN IF NOT EXISTS broker text,
 ADD COLUMN IF NOT EXISTS asset_type text,
 ADD COLUMN IF NOT EXISTS symbol text,
-ADD COLUMN IF NOT EXISTS buy_currency text DEFAULT 'USD';
+ADD COLUMN IF NOT EXISTS buy_currency text DEFAULT 'USD',
+ADD COLUMN IF NOT EXISTS commission numeric DEFAULT 0;
 
 -- Renombrar columna 'type' a 'asset_type' si existe (para evitar conflictos)
 -- La columna 'type' ya existe pero debería llamarse 'asset_type'
