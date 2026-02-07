@@ -396,6 +396,8 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
                                     <th className="px-6 py-6 border-r border-white/10 text-right">Cantidad</th>
                                     <th className="px-6 py-6 border-r border-white/10 text-right">Precio Compra</th>
                                     <th className="px-6 py-6 border-r border-white/10 text-right">Precio Actual</th>
+                                    <th className="px-6 py-6 border-r border-white/10 text-right">Costo Total</th>
+                                    <th className="px-6 py-6 border-r border-white/10 text-right cursor-pointer hover:bg-white/10" onClick={() => setSortBy({ field: 'value', direction: sortBy.field === 'value' && sortBy.direction === 'desc' ? 'asc' : 'desc' })}>Valor Actual</th>
                                     <th className="px-6 py-6 border-r border-white/10 text-right cursor-pointer hover:bg-white/10" onClick={() => setSortBy({ field: 'pl', direction: sortBy.field === 'pl' && sortBy.direction === 'desc' ? 'asc' : 'desc' })}>P&L</th>
                                     <th className="px-6 py-6 border-r border-white/10 text-right cursor-pointer hover:bg-white/10" onClick={() => setSortBy({ field: 'roi', direction: sortBy.field === 'roi' && sortBy.direction === 'desc' ? 'asc' : 'desc' })}>ROI</th>
                                     <th className="px-6 py-6 border-r border-white/10 text-center">Estado</th>
@@ -407,6 +409,8 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
                                     const roi = calculateROI(inv.buyPrice, inv.currentPrice)
                                     const pl = calculatePL(inv.buyPrice, inv.currentPrice, inv.quantity)
                                     const freshness = getDataFreshness(inv.lastUpdate)
+                                    const totalCost = inv.buyPrice * inv.quantity
+                                    const currentValue = inv.currentPrice * inv.quantity
 
                                     return (
                                         <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors text-xs font-bold text-slate-800">
@@ -421,6 +425,12 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
                                             <td className="px-6 py-5 border-r border-slate-100 text-right font-mono">{inv.quantity.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 8 })}</td>
                                             <td className="px-6 py-5 border-r border-slate-100 text-right font-mono">${inv.buyPrice.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
                                             <td className="px-6 py-5 border-r border-slate-100 text-right font-mono">${inv.currentPrice.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                            <td className="px-6 py-5 border-r border-slate-100 text-right font-mono font-black text-slate-700">
+                                                ${totalCost.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                            </td>
+                                            <td className={`px-6 py-5 border-r border-slate-100 text-right font-mono font-black ${currentValue >= totalCost ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                                ${currentValue.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                            </td>
                                             <td className={`px-6 py-5 border-r border-slate-100 text-right font-mono font-black ${pl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                                 ${pl >= 0 ? '+' : ''}{pl.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                             </td>
