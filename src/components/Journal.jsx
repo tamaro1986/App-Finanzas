@@ -101,7 +101,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
 
         // Guardar en Supabase (como un solo registro con array)
         const medRecord = { id: 'medications-list', list: updatedList }
-        await saveToSupabase('journal_med_list', 'finanzas_journal_med_list', medRecord, [medRecord])
+        await saveToSupabase('journal_med_list', 'journal_med_list', medRecord, [medRecord])
 
         setNewMedName('')
     }
@@ -164,7 +164,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         setTccEntries(updatedEntries)
 
         // Guardar en Supabase
-        await saveToSupabase('journal_tcc', 'finanzas_journal_cbt', entry, updatedEntries)
+        await saveToSupabase('journal_tcc', 'journal_tcc', entry, updatedEntries)
 
         closeModal()
     }
@@ -182,7 +182,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         setLogEntries(updatedEntries)
 
         // Guardar en Supabase
-        await saveToSupabase('journal_health_log', 'finanzas_journal_health_log', entry, updatedEntries)
+        await saveToSupabase('journal_health_log', 'journal_health_log', entry, updatedEntries)
 
         closeModal()
     }
@@ -191,7 +191,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         if (confirm('¿Eliminar este registro TCC?')) {
             const updated = tccEntries.filter(e => e.id !== id)
             setTccEntries(updated)
-            await deleteFromSupabase('journal_tcc', 'finanzas_journal_cbt', id, updated)
+            await deleteFromSupabase('journal_tcc', 'journal_tcc', id, updated)
         }
     }
 
@@ -199,7 +199,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         if (confirm('¿Eliminar este registro de bitácora?')) {
             const updated = logEntries.filter(e => e.id !== id)
             setLogEntries(updated)
-            await deleteFromSupabase('journal_health_log', 'finanzas_journal_health_log', id, updated)
+            await deleteFromSupabase('journal_health_log', 'journal_health_log', id, updated)
         }
     }
 
