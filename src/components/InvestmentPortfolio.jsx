@@ -98,7 +98,7 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
         setInvestments(updatedInvestments)
 
         // Sincronizar con Supabase
-        await saveToSupabase('investments', 'finanzas_investments', investment, updatedInvestments)
+        await saveToSupabase('investments', 'investments', investment, updatedInvestments)
 
         // Cerrar modal y resetear formulario
         setIsModalOpen(false)
@@ -151,7 +151,7 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
 
         // Sincronizar todas las inversiones actualizadas con Supabase
         for (const inv of updatedInvestments) {
-            await saveToSupabase('investments', 'finanzas_investments', inv, updatedInvestments)
+            await saveToSupabase('investments', 'investments', inv, updatedInvestments)
         }
 
         setIsUpdating(false)
@@ -172,7 +172,7 @@ const InvestmentPortfolio = ({ investments, setInvestments }) => {
             setInvestments(updatedInvestments)
 
             // Sincronizar eliminación con Supabase
-            await deleteFromSupabase('investments', 'finanzas_investments', id, updatedInvestments)
+            await deleteFromSupabase('investments', 'investments', id, updatedInvestments)
         }
     }
 
