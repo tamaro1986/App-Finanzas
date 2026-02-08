@@ -155,13 +155,12 @@ Analiza este pensamiento usando las siguientes técnicas de TCC y responde con e
 
 Responde de forma empática, profesional y esperanzadora. El objetivo es que el paciente se sienta comprendido y equipado con herramientas prácticas.`
 
-        // Lista de modelos a intentar (en orden de preferencia)
-        // Usando modelos compatibles con la API gratuita de Google AI Studio
+        // Lista de modelos disponibles (verificados via ListModels API)
         const modelsToTry = [
-            { version: 'v1beta', model: 'gemini-1.5-flash-latest' },
-            { version: 'v1beta', model: 'gemini-1.5-flash' },
-            { version: 'v1beta', model: 'gemini-pro' },
-            { version: 'v1', model: 'gemini-pro' }
+            { version: 'v1beta', model: 'gemini-2.5-flash' },
+            { version: 'v1beta', model: 'gemini-2.0-flash-lite' },
+            { version: 'v1beta', model: 'gemini-flash-latest' },
+            { version: 'v1beta', model: 'gemini-pro-latest' }
         ]
 
         // Función helper para hacer fetch con timeout
