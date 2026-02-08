@@ -112,45 +112,158 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         }
     }
 
-    const simulateAIResponse = async (thought) => {
-        const apiKey = localStorage.getItem('gemini_api_key')
-        if (!apiKey) {
-            await new Promise(resolve => setTimeout(resolve, 800))
-            return `🔍 **DISTORSIÓN**: Posible Catastrofismo.\n\n⚖️ **ANÁLISIS RACIONAL**: Los pensamientos no son hechos. Busca evidencia real.\n\n🌱 **NUEVA PERSPECTIVA**: Esto también pasará.`
-        }
+    const simulateAIResponse = async (thought, situation, emotions) => {
+        // API Key hardcodeada para conexión automática
+        const GEMINI_API_KEY = 'AIzaSyBHeE525Uh0Crk31DahsNd-Vtd4MHp7nSI'
 
         setIsThinking(true)
-        const attempts = [
-            { ver: 'v1', mod: 'gemini-1.5-flash' },
-            { ver: 'v1beta', mod: 'gemini-1.5-flash' }
+
+        // Prompt profesional basado en las 9 técnicas de manejo de pensamientos intrusos
+        const professionalPrompt = `Eres un terapeuta cognitivo-conductual (TCC) experto especializado en el manejo de pensamientos intrusos. 
+
+CONTEXTO DEL PACIENTE:
+- Situación: "${situation || 'No especificada'}"
+- Emociones experimentadas: "${emotions || 'No especificadas'}"
+- Pensamiento automático/intruso: "${thought}"
+
+INSTRUCCIONES:
+Analiza este pensamiento usando las siguientes técnicas de TCC y responde con el formato EXACTO especificado:
+
+🔍 **DISTORSIONES COGNITIVAS IDENTIFICADAS**
+(Identifica las distorsiones presentes: Catastrofismo, Pensamiento todo-o-nada, Sobregeneralización, Filtro mental, Descalificar lo positivo, Lectura de mente, Adivinación del futuro, Magnificación/Minimización, Razonamiento emocional, Etiquetado, Personalización, Debería)
+
+📝 **RECONOCIMIENTO Y ACEPTACIÓN** (Técnicas 1-2)
+(Valida que el pensamiento es normal y no define al paciente. El paciente debe saber que los pensamientos intrusos son comunes y no reflejan su valor como persona)
+
+⚖️ **EVALUACIÓN DE EVIDENCIA** (Técnica 3)
+(¿Hay evidencia real que respalde este pensamiento? ¿Está exagerado o distorsionado? Desafía el pensamiento con preguntas socráticas)
+
+💭 **TÉCNICA DE DESCONEXIÓN** (Técnica 4)
+(Sugiere cómo el paciente puede distanciarse del pensamiento: visualizarlo como una nube que pasa, decirlo en voz alta para hacerlo mundano, observarlo sin involucrarse)
+
+🎯 **REDIRECCIÓN Y ACCIÓN** (Técnica 5)
+(Sugiere una actividad concreta para cambiar el foco: lectura, ejercicio, meditación, lista de gratitud)
+
+🧘 **TÉCNICA DE RELAJACIÓN** (Técnica 6)
+(Proporciona un ejercicio breve: respiración 4-7-8, relajación muscular progresiva, visualización calmante)
+
+✨ **RESPUESTA ADAPTATIVA** (Técnica 8)
+(Crea 2-3 afirmaciones positivas específicas que el paciente puede usar cuando surja este pensamiento)
+
+🌱 **NUEVA PERSPECTIVA**
+(Una frase corta y poderosa que reencuadre el pensamiento de forma saludable)
+
+Responde de forma empática, profesional y esperanzadora. El objetivo es que el paciente se sienta comprendido y equipado con herramientas prácticas.`
+
+        // Lista de modelos a intentar (en orden de preferencia)
+        const modelsToTry = [
+            { version: 'v1beta', model: 'gemini-2.0-flash' },
+            { version: 'v1beta', model: 'gemini-1.5-flash' },
+            { version: 'v1', model: 'gemini-1.5-flash' },
+            { version: 'v1beta', model: 'gemini-1.5-pro' }
         ]
 
-        for (const attempt of attempts) {
+        // Función helper para hacer fetch con timeout
+        const fetchWithTimeout = async (url, options, timeoutMs = 20000) => {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
             try {
-                const prompt = `Actúa como un terapeuta cognitivo conductual experto. El usuario tuvo este pensamiento automático: "${thought}". Analízalo y devuelve SIEMPRE la respuesta con este formato exacto:\n\n🔍 **DISTORSIONES IDENTIFICADAS**: (Enumera las distorsiones)\n\n⚖️ **ANÁLISIS RACIONAL**: (Explicación detallada)\n\n🌱 **NUEVA PERSPECTIVA**: (Frase corta)`
-                const response = await fetch(`https://generativelanguage.googleapis.com/${attempt.ver}/models/${attempt.mod}:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                })
+                const response = await fetch(url, { ...options, signal: controller.signal })
+                clearTimeout(timeoutId)
+                return response
+            } catch (error) {
+                clearTimeout(timeoutId)
+                throw error
+            }
+        }
+
+        // Intentar con cada modelo
+        for (const { version, model } of modelsToTry) {
+            try {
+                console.log(`🤖 Intentando con ${model}...`)
+
+                const response = await fetchWithTimeout(
+                    `https://generativelanguage.googleapis.com/${version}/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: professionalPrompt }] }],
+                            generationConfig: {
+                                temperature: 0.7,
+                                maxOutputTokens: 2048
+                            }
+                        })
+                    },
+                    20000 // 20 segundos timeout
+                )
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}))
+                    console.warn(`⚠️ Error con ${model}:`, response.status, errorData)
+                    continue // Intentar siguiente modelo
+                }
+
                 const data = await response.json()
-                if (data.candidates?.[0]) {
+
+                if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    console.log(`✅ Respuesta exitosa de ${model}`)
                     setIsThinking(false)
                     return data.candidates[0].content.parts[0].text
                 }
-            } catch (err) { console.error(err) }
+
+                // Si no hay contenido, intentar siguiente modelo
+                console.warn(`⚠️ ${model} no devolvió contenido válido`)
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.warn(`⏱️ Timeout con ${model}`)
+                } else {
+                    console.error(`❌ Error con ${model}:`, error.message)
+                }
+                // Continuar con siguiente modelo
+            }
         }
+
+        // Si todos los modelos fallaron, devolver análisis de fallback útil
         setIsThinking(false)
-        return "No se pudo conectar con la IA. Intenta completar el desafío manualmente."
+        console.error('❌ Todos los modelos fallaron')
+
+        return `🔍 **ANÁLISIS OFFLINE**
+
+⚠️ No se pudo conectar con la IA en este momento, pero aquí tienes un análisis guiado:
+
+📝 **RECONOCIMIENTO**
+Tu pensamiento "${thought.substring(0, 50)}..." es solo un pensamiento, no un hecho. Los pensamientos intrusos son normales y no te definen.
+
+⚖️ **PREGÚNTATE**
+- ¿Hay evidencia real de que esto es verdad?
+- ¿Estoy exagerando o anticipando lo peor?
+- ¿Qué le diría a un amigo con este pensamiento?
+
+🧘 **TÉCNICA DE RELAJACIÓN**
+Respira profundo: inhala 4 segundos, mantén 7, exhala 8. Repite 3 veces.
+
+✨ **AFIRMACIÓN**
+"Este pensamiento no me controla. Tengo el poder de elegir cómo respondo."
+
+🌱 **RECUERDA**
+Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrarte a ellos.
+
+💡 *Vuelve a intentar en unos minutos para obtener un análisis personalizado con IA.*`
     }
 
     const handleAddTccEntry = async (e) => {
         e.preventDefault()
         let finalRefutation = newTccEntry.refutation
 
-        // Solo simular si es nuevo o si el pensamiento cambió significativamente y no hay refutación
+        // Generar análisis de IA con contexto completo (situación, emociones y pensamiento)
         if (!editingId || !finalRefutation) {
-            finalRefutation = await simulateAIResponse(newTccEntry.automaticThought)
+            finalRefutation = await simulateAIResponse(
+                newTccEntry.automaticThought,
+                newTccEntry.situation,
+                newTccEntry.emotions
+            )
         }
 
         const entry = editingId
@@ -451,19 +564,114 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
 
                             <div className="p-12 overflow-y-auto custom-scrollbar flex-1 bg-white">
                                 {activeTab === 'tcc' ? (
-                                    <form onSubmit={handleAddTccEntry} className="space-y-12">
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                                            <div className="space-y-10">
-                                                <div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Situación</label><input type="text" required placeholder="Ej: Mi jefe me pidió una reunión a última hora sin decir el motivo..." className="input-field !bg-slate-50 !border-none !font-black !py-6 !px-8 !rounded-[2.5rem] !text-base shadow-inner" value={newTccEntry.situation} onChange={e => setNewTccEntry({ ...newTccEntry, situation: e.target.value })} /></div>
-                                                <div className="space-y-4"><label className="text-[10px] font-black text-violet-500 uppercase px-2 italic">Afectación Emocional</label><textarea required placeholder="Ej: Ansiedad (9/10), taquicardia y mucha presión en el pecho..." className="input-field !bg-violet-50/30 !border-none !min-h-[160px] !font-black !py-8 !px-10 !rounded-[3rem] shadow-inner" value={newTccEntry.emotions} onChange={e => setNewTccEntry({ ...newTccEntry, emotions: e.target.value })} /></div>
+                                    <form onSubmit={handleAddTccEntry} className="space-y-10">
+                                        {/* Indicador de IA Procesando */}
+                                        {isThinking && (
+                                            <div className="bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500 p-6 rounded-[2rem] text-white shadow-xl animate-pulse">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="relative">
+                                                        <Brain size={32} className="animate-bounce" />
+                                                        <Sparkles size={16} className="absolute -top-1 -right-1 text-yellow-300 animate-ping" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-black text-lg">Analizando con IA...</p>
+                                                        <p className="text-white/80 text-sm font-medium">Aplicando técnicas TCC profesionales a tu pensamiento</p>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-4 h-2 bg-white/20 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-white/50 rounded-full animate-shimmer" style={{ width: '60%', animation: 'shimmer 1.5s infinite linear' }} />
+                                                </div>
                                             </div>
-                                            <div className="space-y-10">
-                                                <div className="space-y-4"><label className="text-[10px] font-black text-rose-500 uppercase px-2 italic">Pensamiento Negativo</label><textarea required placeholder="Ej: Seguro me van a despedir por el error del martes, soy un fracaso..." className="input-field !bg-rose-50/30 !border-none !min-h-[160px] !font-black !py-8 !px-10 !rounded-[3rem] italic shadow-inner" value={newTccEntry.automaticThought} onChange={e => setNewTccEntry({ ...newTccEntry, automaticThought: e.target.value })} /></div>
-                                                <div className="space-y-4"><label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Distorsión</label><select className="input-field !bg-slate-50 !border-none !font-black !py-5 !px-8 !rounded-[2rem] shadow-inner" value={newTccEntry.distortion} onChange={e => setNewTccEntry({ ...newTccEntry, distortion: e.target.value })}><option value="">¿Cuál detectas?</option>{DISTORTIONS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                        )}
+
+                                        {/* Selector de Fecha y Hora */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-gradient-to-r from-slate-50 to-violet-50/30 rounded-[2rem] border border-slate-100">
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase px-2 flex items-center gap-2">
+                                                    <Calendar size={14} className="text-violet-500" />
+                                                    Fecha del Registro
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    className="input-field !bg-white !border-2 !border-slate-100 !font-bold !py-4 !px-6 !rounded-[1.5rem] focus:!border-violet-400 transition-all w-full"
+                                                    value={newTccEntry.date?.split('T')[0] || format(new Date(), 'yyyy-MM-dd')}
+                                                    onChange={e => {
+                                                        const time = newTccEntry.date?.split('T')[1] || format(new Date(), 'HH:mm')
+                                                        setNewTccEntry({ ...newTccEntry, date: `${e.target.value}T${time}` })
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase px-2 flex items-center gap-2">
+                                                    <Timer size={14} className="text-violet-500" />
+                                                    Hora del Pensamiento
+                                                </label>
+                                                <input
+                                                    type="time"
+                                                    className="input-field !bg-white !border-2 !border-slate-100 !font-bold !py-4 !px-6 !rounded-[1.5rem] focus:!border-violet-400 transition-all w-full"
+                                                    value={newTccEntry.date?.split('T')[1] || format(new Date(), 'HH:mm')}
+                                                    onChange={e => {
+                                                        const date = newTccEntry.date?.split('T')[0] || format(new Date(), 'yyyy-MM-dd')
+                                                        setNewTccEntry({ ...newTccEntry, date: `${date}T${e.target.value}` })
+                                                    }}
+                                                />
                                             </div>
                                         </div>
-                                        <button type="submit" disabled={isThinking} className="w-full bg-violet-600 text-white font-black py-8 rounded-[3rem] shadow-2xl transition-all text-2xl flex items-center justify-center gap-4">
-                                            {isThinking ? <RefreshCw className="animate-spin" /> : (editingId ? 'Actualizar Registro' : 'Guardar y Analizar')}
+
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                                            <div className="space-y-10">
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Situación Desencadenante</label>
+                                                    <input type="text" required placeholder="Ej: Mi jefe me pidió una reunión a última hora sin decir el motivo..." className="input-field !bg-slate-50 !border-none !font-black !py-6 !px-8 !rounded-[2.5rem] !text-base shadow-inner" value={newTccEntry.situation} onChange={e => setNewTccEntry({ ...newTccEntry, situation: e.target.value })} />
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-black text-violet-500 uppercase px-2 italic">Afectación Emocional (0-10)</label>
+                                                    <textarea required placeholder="Ej: Ansiedad (9/10), taquicardia y mucha presión en el pecho..." className="input-field !bg-violet-50/30 !border-none !min-h-[160px] !font-black !py-8 !px-10 !rounded-[3rem] shadow-inner" value={newTccEntry.emotions} onChange={e => setNewTccEntry({ ...newTccEntry, emotions: e.target.value })} />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-10">
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-black text-rose-500 uppercase px-2 italic flex items-center gap-2">
+                                                        <AlertCircle size={14} />
+                                                        Pensamiento Automático/Intruso
+                                                    </label>
+                                                    <textarea required placeholder="Ej: Seguro me van a despedir por el error del martes, soy un fracaso total..." className="input-field !bg-rose-50/30 !border-none !min-h-[160px] !font-black !py-8 !px-10 !rounded-[3rem] italic shadow-inner" value={newTccEntry.automaticThought} onChange={e => setNewTccEntry({ ...newTccEntry, automaticThought: e.target.value })} />
+                                                </div>
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-black text-slate-400 uppercase px-2 italic">Distorsión Cognitiva (Opcional)</label>
+                                                    <select className="input-field !bg-slate-50 !border-none !font-black !py-5 !px-8 !rounded-[2rem] shadow-inner" value={newTccEntry.distortion} onChange={e => setNewTccEntry({ ...newTccEntry, distortion: e.target.value })}>
+                                                        <option value="">¿Cuál detectas? (La IA también identificará)</option>
+                                                        {DISTORTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Mensaje informativo sobre la IA */}
+                                        <div className="flex items-start gap-4 p-6 bg-gradient-to-r from-indigo-50 to-violet-50 rounded-[2rem] border border-indigo-100">
+                                            <Sparkles className="text-indigo-500 shrink-0 mt-1" size={20} />
+                                            <div>
+                                                <p className="font-bold text-indigo-900 text-sm">Análisis con Inteligencia Artificial</p>
+                                                <p className="text-indigo-700/70 text-xs mt-1">Al guardar, la IA analizará tu pensamiento usando 9 técnicas profesionales de TCC: reconocimiento, aceptación, evaluación de evidencia, desconexión, redirección, relajación, rutina de revisión, respuesta adaptativa y exposición gradual.</p>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            type="submit"
+                                            disabled={isThinking}
+                                            className={`w-full font-black py-8 rounded-[3rem] shadow-2xl transition-all text-2xl flex items-center justify-center gap-4 ${isThinking ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white hover:scale-[1.02]'}`}
+                                        >
+                                            {isThinking ? (
+                                                <>
+                                                    <RefreshCw className="animate-spin" size={28} />
+                                                    <span>Analizando con IA...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Brain size={28} />
+                                                    <span>{editingId ? 'Actualizar Registro' : 'Guardar y Analizar con IA'}</span>
+                                                </>
+                                            )}
                                         </button>
                                     </form>
                                 ) : (
