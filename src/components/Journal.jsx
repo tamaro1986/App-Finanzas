@@ -452,7 +452,7 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
                                             <button onClick={() => deleteTccEntry(entry.id)} className="p-3 text-slate-400 hover:text-rose-500 transition-colors bg-white rounded-2xl shadow-sm border border-slate-50"><Trash2 size={20} /></button>
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-1 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-50">
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-50">
                                         <div className="p-10 space-y-8">
                                             <div><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1 italic">Situación</span><p className="text-sm text-slate-900 font-black">{entry.situation}</p></div>
                                             <div><span className="text-[10px] font-black text-violet-400 uppercase tracking-widest block mb-1 italic">Sentir</span><p className="text-xs text-slate-600 font-bold italic">"{entry.emotions}"</p></div>
@@ -462,10 +462,6 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
                                             <p className="text-base text-rose-950 font-black italic">"{entry.automaticThought}"</p>
                                             {entry.distortion && <div className="mt-4 p-3 bg-white/50 rounded-xl border border-rose-100 text-[10px] font-black text-rose-600 uppercase tracking-tighter shadow-inner">{entry.distortion}</div>}
                                         </div>
-                                        <div className="p-10 bg-indigo-50/10">
-                                            <div className="flex items-center gap-2 mb-4"><Sparkles className="text-indigo-500" size={18} /><span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest italic">IA Análisis</span></div>
-                                            <p className="text-xs text-indigo-900 font-bold whitespace-pre-line leading-relaxed">{entry.refutation}</p>
-                                        </div>
                                         <div className="p-10">
                                             <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block mb-4 italic">Reevaluación</span>
                                             {entry.reevaluation ? (
@@ -473,6 +469,23 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
                                             ) : (
                                                 <textarea placeholder="Conclusión..." className="w-full h-32 bg-slate-50 border-none rounded-2xl p-4 text-xs font-black outline-none focus:ring-4 focus:ring-emerald-100 transition-all shadow-inner" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleUpdateTccReevaluation(entry.id, e.target.value); } }} />
                                             )}
+                                        </div>
+                                    </div>
+                                    {/* Análisis de IA - Sección completa abajo */}
+                                    <div className="p-8 bg-gradient-to-r from-indigo-50/50 via-violet-50/30 to-purple-50/50 border-t border-slate-100">
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                                                <Sparkles className="text-white" size={20} />
+                                            </div>
+                                            <div>
+                                                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Análisis de IA</span>
+                                                <p className="text-[10px] text-indigo-400 font-medium">Basado en técnicas de TCC</p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-inner border border-indigo-100/50">
+                                            <div className="prose prose-sm max-w-none text-indigo-900 font-medium whitespace-pre-line leading-relaxed">
+                                                {entry.refutation}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
