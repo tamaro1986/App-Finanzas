@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react'
-import { Landmark, Calendar, DollarSign, CheckCircle2, Circle, ArrowLeft, TrendingDown, Info, CreditCard, Plus, Trash2 } from 'lucide-react'
-import { format, addMonths, parseISO } from 'date-fns'
+import { Landmark, Calendar, DollarSign, CheckCircle2, Circle, ArrowLeft, TrendingDown, Info, CreditCard, Plus, Trash2, AlertCircle } from 'lucide-react'
+import { format, addMonths, parseISO, isBefore } from 'date-fns'
 import { es } from 'date-fns/locale'
+
+// Función helper para redondear a 2 decimales
+const round2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100
+
+// Función helper para formatear moneda con 2 decimales
+const formatCurrency = (amount) => {
+    return '$' + round2(amount).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
 const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
     const [selectedDebtId, setSelectedDebtId] = useState(null)
@@ -17,8 +25,9 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
     const calculateAmortization = (loan) => {
         if (!loan.loanDetails) return []
 
-        const { loanAmount, interestRate, term, firstPaymentDate, insurance } = loan.loanDetails
+        const { loanAmount, interestRate, term, firstPaymentDate, insurance, lateInterestRate } = loan.loanDetails
         const monthlyRate = (interestRate / 100) / 12
+        const monthlyLateRate = ((lateInterestRate || 0) / 100) / 12
         const monthlyPayment = monthlyRate === 0
             ? loanAmount / term
             : (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1)
@@ -26,42 +35,95 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         let balance = loanAmount
         const schedule = []
         let startDate = parseISO(firstPaymentDate)
+        const today = new Date()
 
         for (let i = 1; i <= term; i++) {
-            const interest = balance * monthlyRate
-            const principal = monthlyPayment - interest
-            balance -= principal
+            const interest = round2(balance * monthlyRate)
+            const principal = round2(monthlyPayment - interest)
+            const insuranceAmount = round2(insurance || 0)
+            const paymentDate = addMonths(startDate, i - 1)
+            const isPaid = (loan.paidInstallments || []).includes(i)
+
+            // Calcular interés por mora si la fecha de pago ya pasó y no está pagada
+            const isOverdue = !isPaid && isBefore(paymentDate, today)
+            const lateInterest = isOverdue ? round2(balance * monthlyLateRate) : 0
+
+            const totalPayment = round2(principal + interest + insuranceAmount + lateInterest)
+            balance = round2(balance - principal)
 
             schedule.push({
                 installment: i,
-                date: format(addMonths(startDate, i - 1), 'yyyy-MM-dd'),
-                payment: monthlyPayment + (insurance || 0),
+                date: format(paymentDate, 'yyyy-MM-dd'),
+                payment: totalPayment,
                 principal: principal,
                 interest: interest,
-                insurance: insurance || 0,
+                insurance: insuranceAmount,
+                lateInterest: lateInterest,
+                isOverdue: isOverdue,
                 remainingBalance: Math.max(0, balance),
-                isPaid: (loan.paidInstallments || []).includes(i)
+                isPaid: isPaid
             })
         }
 
         return schedule
     }
 
+    // Calcular el balance actual basado en cuotas pagadas
+    const calculateCurrentBalance = (loan, schedule) => {
+        if (!loan.loanDetails) return loan.balance
+
+        const paidInstallments = loan.paidInstallments || []
+        let currentBalance = loan.loanDetails.loanAmount
+
+        // Restar el capital de cada cuota pagada
+        schedule.forEach((row) => {
+            if (paidInstallments.includes(row.installment)) {
+                currentBalance -= row.principal
+            }
+        })
+
+        return round2(Math.max(0, currentBalance))
+    }
+
+    // Calcular el total de intereses pendientes
+    const calculatePendingInterest = (schedule) => {
+        return round2(schedule.filter(row => !row.isPaid).reduce((sum, row) => sum + row.interest, 0))
+    }
+
     const handleTogglePayment = (debtId, installmentNum) => {
+        const debt = accounts.find(acc => acc.id === debtId)
+        if (!debt) return
+
+        const schedule = calculateAmortization(debt)
+        const installment = schedule.find(s => s.installment === installmentNum)
+        if (!installment) return
+
+        const paid = debt.paidInstallments || []
+        const wasPaid = paid.includes(installmentNum)
+        const newPaid = wasPaid
+            ? paid.filter(n => n !== installmentNum)
+            : [...paid, installmentNum]
+
+        // Recalcular el balance basado en las cuotas pagadas
+        let newBalance = debt.loanDetails.loanAmount
+        schedule.forEach((row) => {
+            if (newPaid.includes(row.installment)) {
+                newBalance -= row.principal
+            }
+        })
+        newBalance = round2(Math.max(0, newBalance))
+
         const updatedAccounts = accounts.map(acc => {
             if (acc.id === debtId) {
-                const paid = acc.paidInstallments || []
-                const newPaid = paid.includes(installmentNum)
-                    ? paid.filter(n => n !== installmentNum)
-                    : [...paid, installmentNum]
-
                 return {
                     ...acc,
-                    paidInstallments: newPaid
+                    paidInstallments: newPaid,
+                    balance: newBalance
                 }
             }
             return acc
         })
+
         setAccounts(updatedAccounts)
         localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
     }
@@ -77,24 +139,19 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                 const newManualPayment = {
                     id: crypto.randomUUID(),
                     ...extraPayment,
-                    amount: amount
+                    amount: round2(amount)
                 }
                 return {
                     ...acc,
                     manualPayments: [...manualPayments, newManualPayment],
-                    balance: Math.max(0, acc.balance - amount)
+                    balance: round2(Math.max(0, acc.balance - amount))
                 }
             }
             return acc
         })
 
         setAccounts(updatedAccounts)
-
-        // Guardar la cuenta actualizada en Supabase
-        const updatedAccount = updatedAccounts.find(acc => acc.id === selectedDebtId)
-        if (updatedAccount) {
-            await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, updatedAccounts)
-        }
+        localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
 
         setIsExtraPaymentModalOpen(false)
         setExtraPayment({
@@ -113,7 +170,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                 return {
                     ...acc,
                     manualPayments: acc.manualPayments.filter(p => p.id !== paymentId),
-                    balance: acc.balance + (payment ? payment.amount : 0)
+                    balance: round2(acc.balance + (payment ? payment.amount : 0))
                 }
             }
             return acc
@@ -134,13 +191,24 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         const relevantTransactions = transactions.filter(t => t.accountId === debt.id)
         const manualPayments = debt.manualPayments || []
 
-        const totalPaidFromTransactions = relevantTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
-        const totalManualPayments = manualPayments.reduce((sum, p) => sum + p.amount, 0)
+        const totalPaidFromTransactions = round2(relevantTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0))
+        const totalManualPayments = round2(manualPayments.reduce((sum, p) => sum + p.amount, 0))
 
-        const totalToPay = schedule.reduce((sum, s) => sum + s.payment, 0)
-        const pendingBalance = Math.max(0, totalToPay - totalPaidFromTransactions - totalManualPayments)
+        // Calcular totales del plan de pagos
+        const totalCapital = round2(schedule.reduce((sum, s) => sum + s.principal, 0))
+        const totalInterest = round2(schedule.reduce((sum, s) => sum + s.interest, 0))
+        const totalInsurance = round2(schedule.reduce((sum, s) => sum + s.insurance, 0))
+        const totalLateInterest = round2(schedule.reduce((sum, s) => sum + s.lateInterest, 0))
+        const grandTotal = round2(totalCapital + totalInterest + totalInsurance + totalLateInterest)
 
-        const currentCapitalBalance = debt.balance
+        // Capital e intereses pendientes (cuotas no pagadas)
+        const pendingCapital = round2(schedule.filter(s => !s.isPaid).reduce((sum, s) => sum + s.principal, 0))
+        const pendingInterest = round2(schedule.filter(s => !s.isPaid).reduce((sum, s) => sum + s.interest, 0))
+        const pendingInsurance = round2(schedule.filter(s => !s.isPaid).reduce((sum, s) => sum + s.insurance, 0))
+        const pendingLateInterest = round2(schedule.filter(s => !s.isPaid).reduce((sum, s) => sum + s.lateInterest, 0))
+        const pendingTotal = round2(pendingCapital + pendingInterest + pendingInsurance + pendingLateInterest)
+
+        const currentCapitalBalance = calculateCurrentBalance(debt, schedule)
 
         return (
             <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
@@ -156,6 +224,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                             <h2 className="text-3xl font-bold text-slate-900 tracking-tight">{debt.name}</h2>
                             <p className="text-slate-500 font-medium capitalize">
                                 {debt.type} • Tasa: {debt.loanDetails.interestRate}% • {debt.loanDetails.term} cuotas
+                                {debt.loanDetails.lateInterestRate > 0 && ` • Mora: ${debt.loanDetails.lateInterestRate}%`}
                             </p>
                         </div>
                     </div>
@@ -169,7 +238,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                         </button>
                         <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo Actual</p>
-                            <p className="text-lg font-bold text-blue-600">${currentCapitalBalance.toLocaleString('es-MX')}</p>
+                            <p className="text-lg font-bold text-blue-600">{formatCurrency(currentCapitalBalance)}</p>
                         </div>
                     </div>
                 </header>
@@ -182,7 +251,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                             </div>
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Capital Pendiente</span>
                         </div>
-                        <h3 className="text-3xl font-bold mb-1">${currentCapitalBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</h3>
+                        <h3 className="text-3xl font-bold mb-1">{formatCurrency(currentCapitalBalance)}</h3>
                         <p className="text-slate-400 text-xs font-medium">Saldo para liquidar hoy</p>
                     </div>
 
@@ -193,7 +262,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                             </div>
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total proyectado</span>
                         </div>
-                        <h3 className="text-3xl font-bold text-slate-900 mb-1">${pendingBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</h3>
+                        <h3 className="text-3xl font-bold text-slate-900 mb-1">{formatCurrency(pendingTotal)}</h3>
                         <p className="text-slate-400 text-xs font-medium">Capital + Intereses futuros</p>
                     </div>
 
@@ -204,7 +273,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                             </div>
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Abonos Realizados</span>
                         </div>
-                        <h3 className="text-3xl font-bold text-slate-900 mb-1">${(totalPaidFromTransactions + totalManualPayments).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</h3>
+                        <h3 className="text-3xl font-bold text-slate-900 mb-1">{formatCurrency(totalPaidFromTransactions + totalManualPayments)}</h3>
                         <p className="text-slate-400 text-xs font-medium">Incluye pagos manuales</p>
                     </div>
                 </div>
@@ -221,22 +290,37 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                                 </div>
                             </div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
+                                <table className="w-full text-left border-collapse min-w-[800px]">
                                     <thead>
                                         <tr className="bg-slate-50/30">
-                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cuota</th>
-                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
-                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Monto</th>
-                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Check</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cuota</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Capital</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Interés</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Seguro</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Mora</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Total</th>
+                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Check</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {schedule.map((row) => (
-                                            <tr key={row.installment} className={`hover:bg-slate-50/50 transition-colors ${row.isPaid ? 'bg-emerald-50/30' : ''}`}>
-                                                <td className="px-6 py-4 text-sm font-medium text-slate-400">#{row.installment}</td>
-                                                <td className="px-6 py-4 text-sm font-semibold text-slate-700">{row.date}</td>
-                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 text-right">${row.payment.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
-                                                <td className="px-6 py-4 text-center">
+                                            <tr key={row.installment} className={`hover:bg-slate-50/50 transition-colors ${row.isPaid ? 'bg-emerald-50/30' : row.isOverdue ? 'bg-rose-50/30' : ''}`}>
+                                                <td className="px-3 py-4 text-sm font-medium text-slate-400">
+                                                    <div className="flex items-center gap-1">
+                                                        #{row.installment}
+                                                        {row.isOverdue && <AlertCircle size={12} className="text-rose-500" />}
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-4 text-sm font-semibold text-slate-700">{row.date}</td>
+                                                <td className="px-3 py-4 text-sm font-medium text-slate-900 text-right">{formatCurrency(row.principal)}</td>
+                                                <td className="px-3 py-4 text-sm font-medium text-amber-600 text-right">{formatCurrency(row.interest)}</td>
+                                                <td className="px-3 py-4 text-sm font-medium text-blue-600 text-right">{formatCurrency(row.insurance)}</td>
+                                                <td className="px-3 py-4 text-sm font-medium text-rose-600 text-right">
+                                                    {row.lateInterest > 0 ? formatCurrency(row.lateInterest) : '-'}
+                                                </td>
+                                                <td className="px-3 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(row.payment)}</td>
+                                                <td className="px-3 py-4 text-center">
                                                     <button
                                                         onClick={() => handleTogglePayment(debt.id, row.installment)}
                                                         className={`p-1.5 rounded-lg transition-all ${row.isPaid ? 'text-emerald-600 bg-emerald-100' : 'text-slate-300 hover:text-slate-400 hover:bg-slate-100'}`}
@@ -247,6 +331,26 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                                             </tr>
                                         ))}
                                     </tbody>
+                                    <tfoot className="bg-slate-50 border-t-2 border-slate-200">
+                                        <tr>
+                                            <td colSpan={2} className="px-3 py-4 text-sm font-bold text-slate-700">TOTALES</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(totalCapital)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-amber-600 text-right">{formatCurrency(totalInterest)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-blue-600 text-right">{formatCurrency(totalInsurance)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-rose-600 text-right">{formatCurrency(totalLateInterest)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(grandTotal)}</td>
+                                            <td></td>
+                                        </tr>
+                                        <tr className="border-t border-slate-200">
+                                            <td colSpan={2} className="px-3 py-4 text-sm font-bold text-emerald-700">PENDIENTE</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingCapital)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingInterest)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingInsurance)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingLateInterest)}</td>
+                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingTotal)}</td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
                                 </table>
                             </div>
                         </div>
@@ -270,7 +374,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                                                     <p className="text-xs font-bold text-slate-900 truncate max-w-[120px]">{t.note || 'Abono'}</p>
                                                     <p className="text-[10px] text-slate-500 font-medium">{t.date}</p>
                                                 </div>
-                                                <p className="text-sm font-bold text-emerald-600">+${t.amount.toLocaleString('es-MX')}</p>
+                                                <p className="text-sm font-bold text-emerald-600">+{formatCurrency(t.amount)}</p>
                                             </div>
                                         ))
                                     )}
@@ -289,7 +393,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                                                     <p className="text-[10px] text-blue-500 font-medium">{p.date}</p>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <p className="text-sm font-bold text-blue-600">${p.amount.toLocaleString('es-MX')}</p>
+                                                    <p className="text-sm font-bold text-blue-600">{formatCurrency(p.amount)}</p>
                                                     <button
                                                         onClick={() => deleteManualPayment(debt.id, p.id)}
                                                         className="p-1.5 text-slate-300 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -377,6 +481,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                         const schedule = calculateAmortization(debt)
                         const nextPayment = schedule.find(s => !s.isPaid)
                         const progress = (debt.paidInstallments?.length || 0) / debt.loanDetails.term
+                        const currentBalance = calculateCurrentBalance(debt, schedule)
 
                         return (
                             <div
@@ -402,7 +507,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                                     <div>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Saldo de Capital</p>
                                         <p className="text-2xl font-bold text-slate-900">
-                                            ${debt.balance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                            {formatCurrency(currentBalance)}
                                         </p>
                                     </div>
                                     <div className="pt-2">
