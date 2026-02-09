@@ -23,6 +23,7 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
         loanDetails: {
             loanAmount: 0,
             interestRate: 0,
+            lateInterestRate: 0,
             term: 12,
             grantingDate: new Date().toISOString().split('T')[0],
             firstPaymentDate: new Date().toISOString().split('T')[0],
@@ -52,6 +53,7 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
                 ...newAccount.loanDetails,
                 loanAmount: parseFloat(newAccount.loanDetails.loanAmount),
                 interestRate: parseFloat(newAccount.loanDetails.interestRate),
+                lateInterestRate: parseFloat(newAccount.loanDetails.lateInterestRate || 0),
                 term: parseInt(newAccount.loanDetails.term),
                 commissions: parseFloat(newAccount.loanDetails.commissions),
                 insurance: parseFloat(newAccount.loanDetails.insurance)
@@ -87,6 +89,7 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
             loanDetails: {
                 loanAmount: 0,
                 interestRate: 0,
+                lateInterestRate: 0,
                 term: 12,
                 grantingDate: new Date().toISOString().split('T')[0],
                 firstPaymentDate: new Date().toISOString().split('T')[0],
@@ -238,6 +241,15 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Tasa Mora Anual (%)</label>
+                                            <input
+                                                type="number" step="0.01" placeholder="0" className="input-field"
+                                                value={newAccount.loanDetails.lateInterestRate}
+                                                onChange={e => setNewAccount({ ...newAccount, loanDetails: { ...newAccount.loanDetails, lateInterestRate: e.target.value } })}
+                                            />
+                                            <p className="text-[10px] text-slate-400 mt-1 pl-1">Se aplica a cuotas vencidas</p>
+                                        </div>
+                                        <div>
                                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Plazo (Meses)</label>
                                             <input
                                                 type="number" required className="input-field"
@@ -245,6 +257,8 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
                                                 onChange={e => setNewAccount({ ...newAccount, loanDetails: { ...newAccount.loanDetails, term: e.target.value } })}
                                             />
                                         </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Comisiones (Total)</label>
                                             <input
