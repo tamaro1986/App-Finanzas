@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { Landmark, Calendar, DollarSign, CheckCircle2, Circle, ArrowLeft, TrendingDown, Info, CreditCard, Plus, Trash2, AlertCircle } from 'lucide-react'
 import { format, addMonths, parseISO, isBefore } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { saveToSupabase } from '../lib/supabaseSync'
+import { useSyncNotifications } from './SyncNotification'
 
 // Función helper para redondear a 2 decimales
 const round2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100
@@ -12,6 +14,7 @@ const formatCurrency = (amount) => {
 }
 
 const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
+    const { addNotification } = useSyncNotifications()
     const [selectedDebtId, setSelectedDebtId] = useState(null)
     const [isExtraPaymentModalOpen, setIsExtraPaymentModalOpen] = useState(false)
     const [extraPayment, setExtraPayment] = useState({
@@ -90,7 +93,7 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         return round2(schedule.filter(row => !row.isPaid).reduce((sum, row) => sum + row.interest, 0))
     }
 
-    const handleTogglePayment = (debtId, installmentNum) => {
+    const handleTogglePayment = async (debtId, installmentNum) => {
         const debt = accounts.find(acc => acc.id === debtId)
         if (!debt) return
 
@@ -113,19 +116,33 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         })
         newBalance = round2(Math.max(0, newBalance))
 
+        const updatedDebt = {
+            ...debt,
+            paidInstallments: newPaid,
+            balance: newBalance
+        }
+
         const updatedAccounts = accounts.map(acc => {
             if (acc.id === debtId) {
-                return {
-                    ...acc,
-                    paidInstallments: newPaid,
-                    balance: newBalance
-                }
+                return updatedDebt
             }
             return acc
         })
 
         setAccounts(updatedAccounts)
         localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
+
+        // Sincronizar con Supabase
+        const result = await saveToSupabase('accounts', 'finanzas_accounts', updatedDebt, updatedAccounts)
+
+        if (result && result.savedToCloud) {
+            addNotification(
+                wasPaid ? `Cuota #${installmentNum} desmarcada` : `✅ Cuota #${installmentNum} marcada como pagada`,
+                wasPaid ? 'info' : 'success'
+            )
+        } else {
+            addNotification('Guardado localmente. Se sincronizará cuando haya conexión.', 'warning')
+        }
     }
 
     const handleAddManualPayment = async (e) => {
