@@ -307,65 +307,66 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                                 </div>
                             </div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse min-w-[800px]">
+                                <table className="w-full text-left border-collapse min-w-[700px]">
                                     <thead>
                                         <tr className="bg-slate-50/30">
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cuota</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Capital</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Interés</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Seguro</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Mora</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Total</th>
-                                            <th className="px-3 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center">Check</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center w-12">✓</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">#</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Capital</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Interés</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Seguro</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Mora</th>
+                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Total</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {schedule.map((row) => (
                                             <tr key={row.installment} className={`hover:bg-slate-50/50 transition-colors ${row.isPaid ? 'bg-emerald-50/30' : row.isOverdue ? 'bg-rose-50/30' : ''}`}>
-                                                <td className="px-3 py-4 text-sm font-medium text-slate-400">
+                                                <td className="px-2 py-3 text-center">
+                                                    <button
+                                                        onClick={() => handleTogglePayment(debt.id, row.installment)}
+                                                        className={`p-1.5 rounded-lg transition-all ${row.isPaid ? 'text-emerald-600 bg-emerald-100 hover:bg-emerald-200' : 'text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 border border-dashed border-slate-300 hover:border-emerald-400'}`}
+                                                        title={row.isPaid ? 'Marcar como no pagada' : 'Marcar como pagada'}
+                                                    >
+                                                        {row.isPaid ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                                                    </button>
+                                                </td>
+                                                <td className="px-2 py-3 text-sm font-medium text-slate-400">
                                                     <div className="flex items-center gap-1">
-                                                        #{row.installment}
+                                                        {row.installment}
                                                         {row.isOverdue && <AlertCircle size={12} className="text-rose-500" />}
                                                     </div>
                                                 </td>
-                                                <td className="px-3 py-4 text-sm font-semibold text-slate-700">{row.date}</td>
-                                                <td className="px-3 py-4 text-sm font-medium text-slate-900 text-right">{formatCurrency(row.principal)}</td>
-                                                <td className="px-3 py-4 text-sm font-medium text-amber-600 text-right">{formatCurrency(row.interest)}</td>
-                                                <td className="px-3 py-4 text-sm font-medium text-blue-600 text-right">{formatCurrency(row.insurance)}</td>
-                                                <td className="px-3 py-4 text-sm font-medium text-rose-600 text-right">
+                                                <td className="px-2 py-3 text-sm font-semibold text-slate-700">{row.date}</td>
+                                                <td className="px-2 py-3 text-sm font-medium text-slate-900 text-right">{formatCurrency(row.principal)}</td>
+                                                <td className="px-2 py-3 text-sm font-medium text-amber-600 text-right">{formatCurrency(row.interest)}</td>
+                                                <td className="px-2 py-3 text-sm font-medium text-blue-600 text-right">{formatCurrency(row.insurance)}</td>
+                                                <td className="px-2 py-3 text-sm font-medium text-rose-600 text-right">
                                                     {row.lateInterest > 0 ? formatCurrency(row.lateInterest) : '-'}
                                                 </td>
-                                                <td className="px-3 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(row.payment)}</td>
-                                                <td className="px-3 py-4 text-center">
-                                                    <button
-                                                        onClick={() => handleTogglePayment(debt.id, row.installment)}
-                                                        className={`p-1.5 rounded-lg transition-all ${row.isPaid ? 'text-emerald-600 bg-emerald-100' : 'text-slate-300 hover:text-slate-400 hover:bg-slate-100'}`}
-                                                    >
-                                                        {row.isPaid ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-                                                    </button>
-                                                </td>
+                                                <td className="px-2 py-3 text-sm font-bold text-slate-900 text-right">{formatCurrency(row.payment)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
                                     <tfoot className="bg-slate-50 border-t-2 border-slate-200">
                                         <tr>
-                                            <td colSpan={2} className="px-3 py-4 text-sm font-bold text-slate-700">TOTALES</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(totalCapital)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-amber-600 text-right">{formatCurrency(totalInterest)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-blue-600 text-right">{formatCurrency(totalInsurance)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-rose-600 text-right">{formatCurrency(totalLateInterest)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(grandTotal)}</td>
                                             <td></td>
+                                            <td colSpan={2} className="px-2 py-4 text-sm font-bold text-slate-700">TOTALES</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(totalCapital)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-amber-600 text-right">{formatCurrency(totalInterest)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-blue-600 text-right">{formatCurrency(totalInsurance)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-rose-600 text-right">{formatCurrency(totalLateInterest)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-slate-900 text-right">{formatCurrency(grandTotal)}</td>
                                         </tr>
                                         <tr className="border-t border-slate-200">
-                                            <td colSpan={2} className="px-3 py-4 text-sm font-bold text-emerald-700">PENDIENTE</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingCapital)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingInterest)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingInsurance)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingLateInterest)}</td>
-                                            <td className="px-3 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingTotal)}</td>
                                             <td></td>
+                                            <td colSpan={2} className="px-2 py-4 text-sm font-bold text-emerald-700">PENDIENTE</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingCapital)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingInterest)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingInsurance)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingLateInterest)}</td>
+                                            <td className="px-2 py-4 text-sm font-bold text-emerald-700 text-right">{formatCurrency(pendingTotal)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
