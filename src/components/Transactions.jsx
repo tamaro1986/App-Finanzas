@@ -31,6 +31,11 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [filterType, setFilterType] = useState('all')
+    const [filterAccountType, setFilterAccountType] = useState('all')
+    const [filterDateFrom, setFilterDateFrom] = useState('')
+    const [filterDateTo, setFilterDateTo] = useState('')
+    const [filterCategoryId, setFilterCategoryId] = useState('all')
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
     const [tempInitialBalance, setTempInitialBalance] = useState('')
     const [isInitialModalOpen, setIsInitialModalOpen] = useState(false)
@@ -1223,12 +1228,53 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         setImportErrors([])
     }
 
+    // Función para limpiar todos los filtros
+    const clearAllFilters = () => {
+        setSearchQuery('')
+        setFilterType('all')
+        setFilterAccountType('all')
+        setFilterDateFrom('')
+        setFilterDateTo('')
+        setFilterCategoryId('all')
+        setSelectedAccountId(null)
+    }
+
+    // Verificar si hay filtros activos
+    const hasActiveFilters = searchQuery || filterType !== 'all' || filterAccountType !== 'all' || filterDateFrom || filterDateTo || filterCategoryId !== 'all' || selectedAccountId
+
+    // Obtener todas las categorías para el filtro
+    const allCategoriesForFilter = [
+        ...getCombinedCategories('income'),
+        ...getCombinedCategories('expense'),
+        TRANSFER_CATEGORY
+    ].filter((cat, index, self) => self.findIndex(c => c.id === cat.id) === index)
+
+    // Obtener tipos de cuenta únicos
+    const accountTypes = [...new Set(accounts.map(acc => acc.type))].filter(Boolean)
+
     const filteredTransactions = React.useMemo(() => {
         let result = transactions.filter(t => {
             const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
             const matchesType = filterType === 'all' || t.type === filterType
             const matchesAccount = !selectedAccountId || t.accountId === selectedAccountId
-            return matchesSearch && matchesType && matchesAccount
+
+            // Filtro por tipo de cuenta
+            const account = accounts.find(a => a.id === t.accountId)
+            const matchesAccountType = filterAccountType === 'all' || account?.type === filterAccountType
+
+            // Filtro por rango de fechas
+            let matchesDateRange = true
+            if (filterDateFrom) {
+                matchesDateRange = matchesDateRange && t.date >= filterDateFrom
+            }
+            if (filterDateTo) {
+                matchesDateRange = matchesDateRange && t.date <= filterDateTo
+            }
+
+            // Filtro por categoría
+            const matchesCategory = filterCategoryId === 'all' || t.categoryId === filterCategoryId
+
+            return matchesSearch && matchesType && matchesAccount && matchesAccountType && matchesDateRange && matchesCategory
         })
 
         // Aplicar ordenamiento
@@ -1253,7 +1299,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             })
         }
         return result
-    }, [transactions, searchQuery, filterType, selectedAccountId, sortConfig])
+    }, [transactions, searchQuery, filterType, selectedAccountId, filterAccountType, filterDateFrom, filterDateTo, filterCategoryId, accounts, sortConfig])
 
 
     // ============================================================================
@@ -1315,7 +1361,18 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             if (t.isInitialBalance) return searchQuery === '' && filterType === 'all'
             const matchesSearch = (t.note || '').toLowerCase().includes(searchQuery.toLowerCase())
             const matchesType = filterType === 'all' || t.type === filterType
-            return matchesSearch && matchesType
+
+            // También aplicar filtros avanzados
+            const account = accounts.find(a => a.id === t.accountId)
+            const matchesAccountType = filterAccountType === 'all' || account?.type === filterAccountType
+
+            let matchesDateRange = true
+            if (filterDateFrom) matchesDateRange = matchesDateRange && t.date >= filterDateFrom
+            if (filterDateTo) matchesDateRange = matchesDateRange && t.date <= filterDateTo
+
+            const matchesCategory = filterCategoryId === 'all' || t.categoryId === filterCategoryId
+
+            return matchesSearch && matchesType && matchesAccountType && matchesDateRange && matchesCategory
         })
 
         // Aplicar ordenamiento también aquí si no es el orden por defecto (fecha desc)
@@ -1341,7 +1398,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         }
 
         return finalResults
-    }, [filteredTransactions, selectedAccountId, accounts, transactions, searchQuery, filterType, sortConfig])
+    }, [filteredTransactions, selectedAccountId, accounts, transactions, searchQuery, filterType, filterAccountType, filterDateFrom, filterDateTo, filterCategoryId, sortConfig])
 
     // Obtener categorías combinadas según el tipo de transacción
     const categories = getCombinedCategories(newTx.type)
@@ -1389,28 +1446,172 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             </header>
 
             {/* Filters */}
-            <div className="flex flex-col md:flex-row gap-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input
-                        type="text"
-                        placeholder="Buscar por nota..."
-                        className="input-field pl-10"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+            <div className="space-y-4">
+                {/* Fila principal de filtros */}
+                <div className="flex flex-col md:flex-row gap-4">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input
+                            type="text"
+                            placeholder="Buscar por nota..."
+                            className="input-field pl-10"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                        <select
+                            className="input-field w-auto"
+                            value={filterType}
+                            onChange={(e) => setFilterType(e.target.value)}
+                        >
+                            <option value="all">Todos los tipos</option>
+                            <option value="income">Ingresos</option>
+                            <option value="expense">Gastos</option>
+                        </select>
+                        <button
+                            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                            className={`btn-secondary text-sm ${showAdvancedFilters ? 'bg-blue-50 text-blue-600 border-blue-200' : ''}`}
+                        >
+                            <Filter size={16} />
+                            <span>Filtros</span>
+                            {hasActiveFilters && (
+                                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                            )}
+                        </button>
+                        {hasActiveFilters && (
+                            <button
+                                onClick={clearAllFilters}
+                                className="btn-secondary text-sm text-rose-600 hover:bg-rose-50 border-rose-200"
+                            >
+                                <X size={16} />
+                                <span>Limpiar</span>
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <select
-                        className="input-field w-auto"
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value)}
-                    >
-                        <option value="all">Todos</option>
-                        <option value="income">Ingresos</option>
-                        <option value="expense">Gastos</option>
-                    </select>
-                </div>
+
+                {/* Panel de filtros avanzados */}
+                {showAdvancedFilters && (
+                    <div className="card !p-4 bg-slate-50/50 border-slate-200/60 animate-in slide-in-from-top-2 duration-300">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {/* Filtro por Tipo de Cuenta */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Tipo de Cuenta
+                                </label>
+                                <select
+                                    className="input-field"
+                                    value={filterAccountType}
+                                    onChange={(e) => setFilterAccountType(e.target.value)}
+                                >
+                                    <option value="all">Todas</option>
+                                    {accountTypes.map(type => (
+                                        <option key={type} value={type}>{type}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Filtro por Categoría */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Categoría
+                                </label>
+                                <select
+                                    className="input-field"
+                                    value={filterCategoryId}
+                                    onChange={(e) => setFilterCategoryId(e.target.value)}
+                                >
+                                    <option value="all">Todas</option>
+                                    {allCategoriesForFilter.map(cat => (
+                                        <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Filtro por Fecha Desde */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Desde
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <input
+                                        type="date"
+                                        className="input-field pl-10"
+                                        value={filterDateFrom}
+                                        onChange={(e) => setFilterDateFrom(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Filtro por Fecha Hasta */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Hasta
+                                </label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <input
+                                        type="date"
+                                        className="input-field pl-10"
+                                        value={filterDateTo}
+                                        onChange={(e) => setFilterDateTo(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Resumen de filtros activos */}
+                        {hasActiveFilters && (
+                            <div className="mt-4 pt-4 border-t border-slate-200/60 flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Activos:</span>
+                                {searchQuery && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-lg text-xs font-medium text-slate-600 border border-slate-200">
+                                        Búsqueda: "{searchQuery}"
+                                        <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                                {filterType !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-lg text-xs font-medium text-slate-600 border border-slate-200">
+                                        {filterType === 'income' ? '📈 Ingresos' : '📉 Gastos'}
+                                        <button onClick={() => setFilterType('all')} className="text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                                {filterAccountType !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-lg text-xs font-medium text-slate-600 border border-slate-200">
+                                        🏦 {filterAccountType}
+                                        <button onClick={() => setFilterAccountType('all')} className="text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                                {filterCategoryId !== 'all' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-lg text-xs font-medium text-slate-600 border border-slate-200">
+                                        {allCategoriesForFilter.find(c => c.id === filterCategoryId)?.icon} {allCategoriesForFilter.find(c => c.id === filterCategoryId)?.name}
+                                        <button onClick={() => setFilterCategoryId('all')} className="text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                                {filterDateFrom && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-lg text-xs font-medium text-slate-600 border border-slate-200">
+                                        📅 Desde: {filterDateFrom}
+                                        <button onClick={() => setFilterDateFrom('')} className="text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                                {filterDateTo && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded-lg text-xs font-medium text-slate-600 border border-slate-200">
+                                        📅 Hasta: {filterDateTo}
+                                        <button onClick={() => setFilterDateTo('')} className="text-slate-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                                {selectedAccountId && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg text-xs font-medium text-blue-600 border border-blue-200">
+                                        💳 {accounts.find(a => a.id === selectedAccountId)?.name}
+                                        <button onClick={() => setSelectedAccountId(null)} className="text-blue-400 hover:text-rose-500"><X size={12} /></button>
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {selectedAccountId && (
