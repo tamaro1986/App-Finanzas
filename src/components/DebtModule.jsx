@@ -298,26 +298,33 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-6">
                         <div className="card !p-0 overflow-hidden shadow-md border-slate-200/60">
-                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
                                 <h4 className="font-bold text-slate-900 flex items-center gap-2">
                                     <Calendar size={18} className="text-slate-400" /> Plan de Pagos
                                 </h4>
-                                <div className="px-2.5 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-lg uppercase tracking-wider">
-                                    Sistema Francés
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-lg">
+                                        <CheckCircle2 size={12} />
+                                        {(debt.paidInstallments || []).length} / {schedule.length} pagadas
+                                    </div>
+                                    <div className="px-2 py-1 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-lg uppercase tracking-wider">
+                                        Sistema Francés
+                                    </div>
                                 </div>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse min-w-[700px]">
-                                    <thead>
-                                        <tr className="bg-slate-50/30">
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-center w-12">✓</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">#</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fecha</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Capital</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Interés</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Seguro</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Mora</th>
-                                            <th className="px-2 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Total</th>
+                            {/* Contenedor con scroll vertical fijo */}
+                            <div className="max-h-[400px] overflow-y-auto overflow-x-auto">
+                                <table className="w-full text-left border-collapse min-w-[650px]">
+                                    <thead className="sticky top-0 bg-white z-10 shadow-sm">
+                                        <tr className="bg-slate-50">
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center w-10">✓</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest w-10">#</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Fecha</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Capital</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Interés</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Seguro</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Mora</th>
+                                            <th className="px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Total</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
