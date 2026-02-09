@@ -1494,7 +1494,26 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 {/* Panel de filtros avanzados */}
                 {showAdvancedFilters && (
                     <div className="card !p-4 bg-slate-50/50 border-slate-200/60 animate-in slide-in-from-top-2 duration-300">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                            {/* Filtro por Cuenta Específica */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Cuenta
+                                </label>
+                                <select
+                                    className="input-field"
+                                    value={selectedAccountId || 'all'}
+                                    onChange={(e) => setSelectedAccountId(e.target.value === 'all' ? null : e.target.value)}
+                                >
+                                    <option value="all">Todas las cuentas</option>
+                                    {accounts.map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.name} ({acc.type})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
                             {/* Filtro por Tipo de Cuenta */}
                             <div>
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
@@ -1505,7 +1524,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                     value={filterAccountType}
                                     onChange={(e) => setFilterAccountType(e.target.value)}
                                 >
-                                    <option value="all">Todas</option>
+                                    <option value="all">Todos los tipos</option>
                                     {accountTypes.map(type => (
                                         <option key={type} value={type}>{type}</option>
                                     ))}
