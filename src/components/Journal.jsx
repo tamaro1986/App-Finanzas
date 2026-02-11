@@ -40,7 +40,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         insomniaLevel: 0,
         medications: {},
         meditation: { morning: 0, afternoon: 0, night: 0 },
-        diary_note: '',
+        diaryNote: '',
         symptoms: ''
     })
 
@@ -77,7 +77,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
             insomniaLevel: 0,
             medications: resetMeds,
             meditation: { morning: 0, afternoon: 0, night: 0 },
-            diary_note: '',
+            diaryNote: '',
             symptoms: ''
         })
     }
@@ -326,7 +326,7 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
     )
 
     const filteredLog = logEntries.filter(e =>
-        (e.diary_note || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (e.diaryNote || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (e.symptoms || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
 
@@ -536,7 +536,7 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
                                                     <td className="px-6 py-5 border-r border-slate-100 text-center bg-amber-50/20">{entry.meditation?.night > 0 ? `${entry.meditation.night}'` : '-'}</td>
                                                     <td className="px-8 py-5 whitespace-normal min-w-[300px]">
                                                         <div className="flex flex-col gap-1">
-                                                            <p className="italic text-slate-500 font-medium leading-relaxed">"{typeof entry.diary_note === 'string' ? entry.diary_note : 'Sin notas.'}"</p>
+                                                            <p className="italic text-slate-500 font-medium leading-relaxed">"{typeof entry.diaryNote === 'string' ? entry.diaryNote : 'Sin notas.'}"</p>
                                                             {entry.symptoms && <p className="text-rose-400 text-[10px] font-black uppercase tracking-tighter mt-1">{typeof entry.symptoms === 'string' ? entry.symptoms : ''}</p>}
                                                         </div>
                                                     </td>
@@ -759,7 +759,7 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
                                             <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-10 bg-slate-50 p-10 rounded-[4rem]">
                                                 <div className="space-y-6">
                                                     <div className="flex items-center gap-3 p-1"><Edit3 size={20} className="text-slate-400" /><span className="text-[10px] font-black uppercase italic">Notas del Día</span></div>
-                                                    <textarea placeholder="Anotaciones diarias o resumen emocional..." className="input-field !bg-white !shadow-none !rounded-[2rem] !min-h-[180px] !py-6 font-medium" value={newLogEntry.diary_note} onChange={e => setNewLogEntry({ ...newLogEntry, diary_note: e.target.value })} />
+                                                    <textarea placeholder="Anotaciones diarias o resumen emocional..." className="input-field !bg-white !shadow-none !rounded-[2rem] !min-h-[180px] !py-6 font-medium" value={newLogEntry.diaryNote} onChange={e => setNewLogEntry({ ...newLogEntry, diaryNote: e.target.value })} />
                                                 </div>
                                                 <div className="space-y-6">
                                                     <div className="flex items-center gap-3 p-1"><Activity size={20} className="text-rose-400" /><span className="text-[10px] font-black uppercase italic">Sintomatología Física</span></div>
