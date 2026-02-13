@@ -79,10 +79,25 @@ const convertObjectToSnakeCase = (obj) => {
     const newObj = {}
 
     // Lista de campos que NO deben convertirse (mantener tal cual)
-    // NO incluir 'id' aquí porque SÍ debe enviarse
     const fieldsToKeepAsIs = ['id', 'user_id']
 
+    // Lista de campos a IGNORAR por completo (campos de UI o temporales)
+    const fieldsToIgnore = [
+        'runningBalance', 'running_balance',
+        'isInitialBalance', 'is_initial_balance',
+        'isInitial', 'is_initial',
+        'rowNum', 'row_num',
+        'siblingId', 'sibling_id',
+        'fromAccountId', 'from_account_id',
+        'toAccountId', 'to_account_id'
+    ]
+
     for (const key in obj) {
+        // Ignorar campos de UI/temporales
+        if (fieldsToIgnore.includes(key) || fieldsToIgnore.includes(camelToSnake(key))) {
+            continue
+        }
+
         // Campos que se mantienen tal cual (sin conversión)
         if (fieldsToKeepAsIs.includes(key)) {
             newObj[key] = obj[key]
