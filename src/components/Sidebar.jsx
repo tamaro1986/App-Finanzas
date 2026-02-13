@@ -3,7 +3,7 @@
 // PROPÓSITO: Navegación lateral con marca NegociosGarcia
 // ============================================================================
 import React from 'react'
-import { LayoutDashboard, Wallet, CreditCard, Settings, PieChart, Car, Stethoscope, Brain, Landmark, TrendingUp, LogOut, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, Wallet, CreditCard, Settings, PieChart, Car, Stethoscope, Brain, Landmark, TrendingUp, LogOut, BarChart3, X } from 'lucide-react'
 import { BRAND_TEXT } from '../constants/brandColors'
 
 const Sidebar = ({ activeView, setActiveView, onLogout, userEmail, onToggle }) => {
