@@ -554,14 +554,15 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
             setAccounts(revertedAccounts)
 
-            // Eliminar transacciones anteriores del array
-            const txWithoutOld = transactions.filter(t => t.id !== transferData.id && t.id !== transferData.siblingId)
-            setTransactions(txWithoutOld)
-
-            // Eliminar de Supabase
-            await deleteFromSupabase('transactions', 'finanzas_transactions', transferData.id, txWithoutOld)
-            await deleteFromSupabase('transactions', 'finanzas_transactions', transferData.siblingId, txWithoutOld)
+            // Eliminar de Supabase las versiones antiguas
+            await deleteFromSupabase('transactions', 'finanzas_transactions', transferData.id, transactions)
+            await deleteFromSupabase('transactions', 'finanzas_transactions', transferData.siblingId, transactions)
         }
+
+        // Base de transacciones a usar (si es edición, usar el array sin las antiguas)
+        const baseTransactions = isEditing
+            ? transactions.filter(t => t.id !== transferData.id && t.id !== transferData.siblingId)
+            : transactions
 
         // Crear ID único compartido para vincular ambas transacciones
         const transferId = isEditing ? transferData.transferId : crypto.randomUUID()
@@ -606,7 +607,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         // Procesar ambas transacciones en lote para evitar condiciones de carrera en el estado
         try {
             // 1. Preparar el nuevo array de transacciones
-            const updatedTransactions = [tx1, tx2, ...transactions]
+            const updatedTransactions = [tx1, tx2, ...baseTransactions]
 
             // 2. Preparar el nuevo array de cuentas con balances actualizados
             const updatedAccounts = accounts.map(acc => {

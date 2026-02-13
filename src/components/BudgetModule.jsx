@@ -321,7 +321,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         transactions.forEach(t => {
             const period = t.date.substring(0, 7)
             const year = t.date.substring(0, 4)
-            if (t.type === 'expense') {
+            if (t.type === 'expense' && !t.isTransfer) {
                 // Buscar la categoría en DEFAULT_CATEGORIES usando categoryId
                 const category = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
                 const categoryName = category?.name || 'Otros'
@@ -351,7 +351,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
 
     const totalProjected = currentMonthBudgets.reduce((sum, c) => sum + (c.type === 'expense' ? (c.projected || 0) : 0), 0)
     const totalExecuted = transactions
-        .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense')
+        .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense' && !t.isTransfer)
         .reduce((sum, t) => sum + t.amount, 0)
 
     return (
