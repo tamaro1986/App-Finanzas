@@ -6,7 +6,7 @@ import React from 'react'
 import { LayoutDashboard, Wallet, CreditCard, Settings, PieChart, Car, Stethoscope, Brain, Landmark, TrendingUp, LogOut, BarChart3 } from 'lucide-react'
 import { BRAND_TEXT } from '../constants/brandColors'
 
-const Sidebar = ({ activeView, setActiveView, onLogout, userEmail }) => {
+const Sidebar = ({ activeView, setActiveView, onLogout, userEmail, onToggle }) => {
     const menuItems = [
         { id: 'dashboard', label: 'Panel Principal', icon: LayoutDashboard },
         { id: 'analytics', label: 'Análisis Mensual', icon: BarChart3 },
@@ -23,7 +23,7 @@ const Sidebar = ({ activeView, setActiveView, onLogout, userEmail }) => {
     return (
         <div className="flex flex-col h-full bg-white">
             {/* Logo y Header */}
-            <div className="p-6 pb-4 flex-shrink-0 border-b border-emerald-100/50">
+            <div className="p-6 pb-4 flex-shrink-0 border-b border-emerald-100/50 relative">
                 <div className="flex items-center gap-3">
                     {/* Logo NG con escudo */}
                     <div className="w-12 h-12 bg-gradient-to-br from-[#1e3a5f] to-[#0d8b5f] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-200 relative overflow-hidden">
@@ -35,6 +35,14 @@ const Sidebar = ({ activeView, setActiveView, onLogout, userEmail }) => {
                         <p className="text-[9px] uppercase tracking-widest text-[#d4af37] font-semibold italic" style={{ fontFamily: 'Georgia, serif' }}>{BRAND_TEXT.tagline}</p>
                     </div>
                 </div>
+                {/* Botón para colapsar (solo visible en desktop, ya que en mobile hay un header externo) */}
+                <button
+                    onClick={onToggle}
+                    className="hidden lg:flex absolute top-4 right-4 p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                    title="Ocultar menú"
+                >
+                    <X size={18} />
+                </button>
             </div>
 
             {/* Navegación */}

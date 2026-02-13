@@ -610,7 +610,9 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             const updatedTransactions = [tx1, tx2, ...baseTransactions]
 
             // 2. Preparar el nuevo array de cuentas con balances actualizados
-            const updatedAccounts = accounts.map(acc => {
+            // 💡 IMPORTANTE: Si es edición, usamos revertedAccounts como base. Si no, usamos accounts.
+            const baseAccounts = isEditing ? revertedAccounts : accounts
+            const updatedAccounts = baseAccounts.map(acc => {
                 if (acc.id === tx1.accountId) {
                     let newBalance = acc.balance
                     if (acc.type === 'Préstamo') {

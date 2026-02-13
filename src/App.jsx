@@ -29,7 +29,7 @@ import './utils/dataRecovery'
 function App() {
     const [activeView, setActiveView] = useState('dashboard')
     const [selectedAccountId, setSelectedAccountId] = useState(null)
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true)
     // Estado de autenticación
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -295,8 +295,8 @@ function App() {
 
                 {/* Sidebar */}
                 <aside className={`
-                fixed lg:static inset-y-0 left-0 w-72 bg-white border-r border-slate-200/60 z-40 transform transition-transform duration-300 ease-in-out
-                ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+                fixed lg:relative inset-y-0 left-0 bg-white border-r border-slate-200/60 z-40 transition-all duration-300 ease-in-out
+                ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 overflow-hidden'}
             `}>
                     <Sidebar
                         activeView={activeView}
@@ -306,8 +306,20 @@ function App() {
                         }}
                         onLogout={handleLogout}
                         userEmail={user?.email}
+                        onToggle={toggleSidebar}
                     />
                 </aside>
+
+                {/* Botón flotante para abrir sidebar en Desktop (solo visible si está cerrado y es lg+) */}
+                {!isSidebarOpen && (
+                    <button
+                        onClick={toggleSidebar}
+                        className="hidden lg:flex fixed top-6 left-6 z-50 p-3 bg-white shadow-lg border border-emerald-100 text-[#0d8b5f] rounded-2xl hover:bg-emerald-50 transition-all animate-in fade-in zoom-in duration-300"
+                        title="Mostrar menú"
+                    >
+                        <Menu size={24} />
+                    </button>
+                )}
 
                 {/* Main Content Area */}
                 <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">
