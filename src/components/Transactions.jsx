@@ -997,8 +997,10 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             // Si la fila está vacía, saltar
             if (!dateRaw && !amountRaw) return
 
-            // Detectar si es transferencia
-            const isTransfer = isTransferRaw?.toString().toUpperCase() === 'SI'
+            // Detectar si es transferencia (por columna SI, o por tipo/categoría "transferencia")
+            const isTransfer = isTransferRaw?.toString().toUpperCase() === 'SI' ||
+                typeRaw?.toString().toLowerCase() === 'transferencia' ||
+                categoryRaw?.toString().toLowerCase() === 'transferencia'
 
             // 1. Validar Fecha
             let date = dateRaw

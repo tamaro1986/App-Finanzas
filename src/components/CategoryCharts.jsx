@@ -119,9 +119,8 @@ const CategoryCharts = ({ transactions }) => {
 
     // 1. Obtener datos procesados para el mes seleccionado
     const data = useMemo(() => {
-        // Filtrar transacciones del periodo Y excluir transferencias
         const periodTransactions = transactions.filter(t =>
-            t.date.startsWith(currentPeriod) && !t.isTransfer
+            t.date.startsWith(currentPeriod) && !t.isTransfer && t.categoryId !== 'transfer'
         );
 
         const incomeMap = {};
@@ -162,7 +161,7 @@ const CategoryCharts = ({ transactions }) => {
             const typeMatch = t.type === selectedCategory.type;
             const category = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId);
             const catName = t.categoryName || category?.name || 'Otros';
-            return periodMatch && typeMatch && catName === selectedCategory.name && !t.isTransfer;
+            return periodMatch && typeMatch && catName === selectedCategory.name && !t.isTransfer && t.categoryId !== 'transfer';
         }).sort((a, b) => new Date(b.date) - new Date(a.date));
     }, [transactions, currentPeriod, selectedCategory]);
 

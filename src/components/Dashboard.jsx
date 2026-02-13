@@ -49,12 +49,12 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
 
     // Calcular ingresos del período seleccionado (excluyendo transferencias)
     const income = transactions
-        .filter(t => t.type === 'income' && t.date.startsWith(selectedPeriod) && !t.isTransfer)
+        .filter(t => t.type === 'income' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer')
         .reduce((sum, t) => sum + t.amount, 0)
 
     // Calcular gastos del período seleccionado (excluyendo transferencias)
     const expense = transactions
-        .filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer)
+        .filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer')
         .reduce((sum, t) => sum + t.amount, 0)
 
     // El Balance Total debe ser la suma real de los saldos de todas las cuentas
