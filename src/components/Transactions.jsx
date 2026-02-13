@@ -1223,9 +1223,9 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         const accSyncResult = await syncToSupabase('accounts', 'finanzas_accounts', updatedAccounts)
 
         if (txSyncResult && accSyncResult) {
-            showNotification(`✅ Se importaron ${importPreview.length} movimientos y se actualizaron los balances correctamente.`, 'success')
+            addNotification(`✅ Se importaron ${importPreview.length} movimientos y se actualizaron los balances correctamente.`, 'success')
         } else {
-            showNotification(`⚠️ Los datos se cargaron localmente pero hubo un problema al sincronizar con la nube.`, 'warning')
+            addNotification(`⚠️ Los datos se cargaron localmente pero hubo un problema al sincronizar con la nube.`, 'warning')
         }
 
         setIsImportModalOpen(false)
