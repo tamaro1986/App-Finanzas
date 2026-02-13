@@ -1407,6 +1407,16 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const categories = getCombinedCategories(newTx.type)
     const editCategories = editingTransaction ? getCombinedCategories(editingTransaction.type) : []
 
+    // Calcular totales para el resumen basado en filteredTransactions
+    const totals = React.useMemo(() => {
+        return filteredTransactions.reduce((acc, t) => {
+            if (t.isTransfer) return acc; // No contar transferencias en totales de ingresos/gastos para no duplicar
+            if (t.type === 'income') acc.income += t.amount;
+            if (t.type === 'expense') acc.expense += t.amount;
+            return acc;
+        }, { income: 0, expense: 0 });
+    }, [filteredTransactions]);
+
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -1447,6 +1457,43 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     </button>
                 </div>
             </header>
+
+            {/* Resumen de Saldos del Periodo Filtro */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="card bg-white border-slate-100 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                            <ArrowUpCircle size={20} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ingresos del Periodo</span>
+                    </div>
+                    <p className="text-2xl font-bold text-emerald-600">
+                        ${totals.income.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </p>
+                </div>
+                <div className="card bg-white border-slate-100 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                            <ArrowDownCircle size={20} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Gastos del Periodo</span>
+                    </div>
+                    <p className="text-2xl font-bold text-rose-600">
+                        ${totals.expense.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </p>
+                </div>
+                <div className="card bg-white border-slate-100 shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                            <CreditCard size={20} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Balance del Periodo</span>
+                    </div>
+                    <p className={`text-2xl font-bold ${(totals.income - totals.expense) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                        ${(totals.income - totals.expense).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                    </p>
+                </div>
+            </div>
 
             {/* Filters */}
             <div className="space-y-4">
@@ -1781,21 +1828,38 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                     /* Mostrar ambas cuentas para transferencias */
                                                     <div className="flex items-center gap-2">
                                                         {(() => {
-                                                            const fromAccount = transactions.find(tx => tx.transferId === t.transferId && tx.type === 'expense')
-                                                            const toAccount = transactions.find(tx => tx.transferId === t.transferId && tx.type === 'income')
-                                                            const fromAcc = accounts.find(a => a.id === fromAccount?.accountId)
-                                                            const toAcc = accounts.find(a => a.id === toAccount?.accountId)
+                                                            // Intentar encontrar la transacción hermana para completar el origen/destino
+                                                            const siblingTx = transactions.find(tx => tx.transferId === t.transferId && tx.id !== t.id)
+
+                                                            // Definir origen y destino basándonos en el tipo de la transacción actual
+                                                            let fromAccId = t.type === 'expense' ? t.accountId : siblingTx?.accountId
+                                                            let toAccId = t.type === 'income' ? t.accountId : siblingTx?.accountId
+
+                                                            const fromAcc = accounts.find(a => a.id === fromAccId)
+                                                            const toAcc = accounts.find(a => a.id === toAccId)
 
                                                             return (
                                                                 <>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: fromAcc?.color }} />
-                                                                        <span className="text-xs font-semibold text-slate-600">{fromAcc?.name}</span>
+                                                                    <div className="flex items-center gap-1.5 min-w-[80px]">
+                                                                        {fromAcc ? (
+                                                                            <>
+                                                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: fromAcc.color }} />
+                                                                                <span className="text-xs font-semibold text-slate-600 truncate max-w-[100px]">{fromAcc.name}</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <span className="text-[10px] font-bold text-slate-300 italic">Origen</span>
+                                                                        )}
                                                                     </div>
-                                                                    <span className="text-blue-400">→</span>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: toAcc?.color }} />
-                                                                        <span className="text-xs font-semibold text-slate-600">{toAcc?.name}</span>
+                                                                    <span className="text-blue-400 font-bold">→</span>
+                                                                    <div className="flex items-center gap-1.5 min-w-[80px]">
+                                                                        {toAcc ? (
+                                                                            <>
+                                                                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: toAcc.color }} />
+                                                                                <span className="text-xs font-semibold text-slate-600 truncate max-w-[100px]">{toAcc.name}</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <span className="text-[10px] font-bold text-slate-300 italic">Destino</span>
+                                                                        )}
                                                                     </div>
                                                                 </>
                                                             )
