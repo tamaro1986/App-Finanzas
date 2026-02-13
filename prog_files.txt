@@ -1,0 +1,66 @@
+
+    Directory: C:\Program Files
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----            6/9/2021    14:31                7-Zip
+d----          10/10/2025    16:24                Adobe
+d----           22/1/2026    21:23                Android
+d----           16/1/2026    22:12                Application Verifier
+d----           6/10/2021    11:08                Azure Data Studio
+d----            3/3/2024    10:48                BraveSoftware
+d----          26/12/2025    15:02                CapCut
+d----           22/1/2026    22:38                Common Files
+da---           31/7/2021    10:41                CUAssistant
+d----           12/8/2021    21:00                DIFX
+d----           10/3/2024    10:46                dotnet
+d----            2/9/2023    18:45                EA Games
+d----           11/9/2023    07:36                Electronic Arts
+da---           30/7/2021    22:17                glassfish-4.1.1
+d----          19/11/2025    20:11                Google
+d----            4/9/2021    16:24                IIS
+d----          18/10/2022    19:59                IIS Express
+d----          26/12/2025    14:23                Intel
+d----           13/7/2025    10:10                Internet Explorer
+d----           22/1/2026    22:40                Java
+d----           24/1/2023    11:27                Maxon Cinema 4D R24
+d----           14/6/2023    08:23                MetaTrader 5
+d----           9/11/2022    18:46                Microsoft
+d----          17/10/2021    20:26                Microsoft Analysis Services
+d----           5/10/2021    21:33                Microsoft MPI
+d----            7/2/2026    10:41                Microsoft Office
+d----           24/5/2024    19:41                Microsoft Office 15
+d----            7/2/2026    11:34                Microsoft OneDrive
+d----            4/9/2021    16:23                Microsoft SDKs
+da---           30/7/2021    15:01                Microsoft Silverlight
+d----          17/10/2021    19:44                Microsoft SQL Server
+d----           2/11/2023    14:50                Microsoft Update Health Tools
+d----           10/3/2024    10:31                Microsoft Visual Studio
+d----          17/10/2021    19:43                Microsoft.NET
+d----           7/12/2019    03:14                ModifiableWindowsApps
+d----            4/2/2026    15:02                Mozilla Firefox
+d----           19/8/2021    14:53                MSBuild
+d----          27/10/2022    19:13                MySQL
+d----           24/5/2024    19:56                NetBeans 8.2
+d----           16/1/2026    21:47                nodejs
+d----            9/5/2022    18:37                PCHealthCheck
+d----            2/8/2021    14:33                Realtek
+d----           24/1/2023    11:26                Red Giant
+d----           19/8/2021    14:53                Reference Assemblies
+da---           17/2/2022    12:52                rempl
+d----           1/10/2023    11:28                Rockstar Games
+da---           17/7/2025    19:40                ruxim
+d----            4/9/2021    16:23                VS2010Schemas
+d----            4/9/2021    16:23                VS2012Schemas
+d----          24/11/2023    14:20                Windows Defender
+d----          22/10/2025    20:26                Windows Defender Advanced Threat Protection
+d----          24/11/2023    14:20                Windows Mail
+d----          24/11/2023    14:20                Windows Media Player
+d----           16/5/2024    20:26                Windows Multimedia Platform
+d----            2/8/2021    15:33                Windows NT
+d----          24/11/2023    14:20                Windows Photo Viewer
+d----           16/5/2024    20:26                Windows Portable Devices
+d----           7/12/2019    03:31                Windows Security
+d----           7/12/2019    03:31                WindowsPowerShell
+d----          26/12/2025    10:12                WSL
+

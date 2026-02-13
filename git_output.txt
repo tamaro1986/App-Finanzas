@@ -1,0 +1,39 @@
+
+========================================
+ SUBIENDO CAMBIOS A GITHUB
+========================================
+
+[1/4] Verificando que .env este protegido...
+"git" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.
+✗ ADVERTENCIA: .env NO esta en .gitignore
+Presiona Ctrl+C para cancelar o cualquier tecla para continuar
+Presione una tecla para continuar . . . 
+
+[2/4] Verificando estado de Git...
+"git" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.
+
+[3/4] Verificando commit...
+"git" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.
+
+[4/4] Subiendo a GitHub...
+"git" no se reconoce como un comando interno o externo,
+programa o archivo por lotes ejecutable.
+
+========================================
+ ✗ ERROR AL SUBIR CAMBIOS
+========================================
+
+Posibles causas:
+1. No hay conexion a internet
+2. Necesitas autenticarte en GitHub
+3. La rama principal se llama 'master' en lugar de 'main'
+
+Intenta manualmente:
+  git push origin main
+O si tu rama es 'master':
+  git push origin master
+
+Presione una tecla para continuar . . . 

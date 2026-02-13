@@ -52,6 +52,14 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         return saved ? JSON.parse(saved) : []
     })
 
+    // ============================================================================
+    // UTILS: Redondeo preciso para evitar errores de coma flotante
+    // ============================================================================
+    const round2 = (num) => {
+        const n = parseFloat(num);
+        return isNaN(n) ? 0 : Math.round((n + Number.EPSILON) * 100) / 100;
+    };
+
     // Guardar logs en localStorage cuando cambien
     useEffect(() => {
         localStorage.setItem('importLogs', JSON.stringify(importLogs))
@@ -236,7 +244,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = oldTransaction.type === 'income' ? acc.balance - oldTransaction.amount : acc.balance + oldTransaction.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
@@ -244,7 +252,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             // Aplicar el efecto de la nueva transacción actualizada
             const updatedTransaction = {
                 ...newTx,
-                amount: parseFloat(newTx.amount)
+                amount: round2(newTx.amount)
             }
 
             const finalAccounts = accountsAfterRevert.map(acc => {
@@ -255,7 +263,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = updatedTransaction.type === 'income' ? acc.balance + updatedTransaction.amount : acc.balance - updatedTransaction.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
@@ -289,7 +297,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             const transaction = {
                 id: crypto.randomUUID(),
                 ...newTx,
-                amount: parseFloat(newTx.amount)
+                amount: round2(newTx.amount)
             }
 
             await processTransaction(transaction)
@@ -342,7 +350,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     // Para cuentas normales: ingreso aumenta, gasto disminuye
                     newBalance = transaction.type === 'income' ? acc.balance + transaction.amount : acc.balance - transaction.amount
                 }
-                return { ...acc, balance: newBalance }
+                return { ...acc, balance: round2(newBalance) }
             }
             return acc
         })
@@ -463,8 +471,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         const shift = newInitial - currentInitial
 
         // 3. El saldo actual de la cuenta se ajusta por ese desplazamiento
-        const newBalance = account.balance + shift
-
+        const newBalance = round2(account.balance + shift)
         const updatedAccounts = accounts.map(a =>
             a.id === selectedAccountId ? { ...a, balance: newBalance } : a
         )
@@ -620,7 +627,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = tx1.type === 'income' ? acc.balance + tx1.amount : acc.balance - tx1.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 if (acc.id === tx2.accountId) {
                     let newBalance = acc.balance
@@ -629,7 +636,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = tx2.type === 'income' ? acc.balance + tx2.amount : acc.balance - tx2.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
@@ -767,7 +774,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         } else {
                             newBalance = txToDelete.type === 'income' ? acc.balance - txToDelete.amount : acc.balance + txToDelete.amount
                         }
-                        return { ...acc, balance: newBalance }
+                        return { ...acc, balance: round2(newBalance) }
                     }
                     return acc
                 })
@@ -781,7 +788,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         } else {
                             newBalance = siblingTx.type === 'income' ? acc.balance - siblingTx.amount : acc.balance + siblingTx.amount
                         }
-                        return { ...acc, balance: newBalance }
+                        return { ...acc, balance: round2(newBalance) }
                     }
                     return acc
                 })
@@ -1338,14 +1345,15 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
             // Revertir delta para la siguiente (anterior en el tiempo)
             const isLoan = account.type === 'Préstamo'
+            const txAmt = round2(tx.amount)
             if (isLoan) {
                 // Para préstamos: ingreso redujo balance, gasto aumentó.
                 // Para revertir: ingreso suma, gasto resta.
-                running = tx.type === 'income' ? running + tx.amount : running - tx.amount
+                running = round2(tx.type === 'income' ? running + txAmt : running - txAmt)
             } else {
                 // Para cuentas normales: ingreso aumentó, gasto disminuyó.
                 // Para revertir: ingreso resta, gasto suma.
-                running = tx.type === 'income' ? running - tx.amount : running + tx.amount
+                running = round2(tx.type === 'income' ? running - txAmt : running + txAmt)
             }
         })
 
