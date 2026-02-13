@@ -1657,7 +1657,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             {/* Transactions Table */}
             <div className="card !p-0 overflow-hidden border-slate-200/60 shadow-md">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full text-left border-collapse min-w-[1000px]">
                         <thead className="bg-slate-50 border-b border-slate-200/60">
                             <tr>
                                 <th
@@ -1716,9 +1716,10 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                     </div>
                                 </th>
                                 {selectedAccountId && <th className="px-6 py-4 text-right text-xs font-bold text-blue-600 uppercase tracking-widest">Saldo</th>}
-                                <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-widest">Acciones</th>
+                                <th className="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-widest w-28">Acciones</th>
                             </tr>
                         </thead>
+
                         <tbody className="divide-y divide-slate-100">
                             {transactionsWithRunningBalance.length === 0 ? (
                                 <tr>
@@ -1755,7 +1756,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                 <td className="px-6 py-4 text-right font-black text-blue-600 bg-blue-100/20 whitespace-nowrap">
                                                     ${t.runningBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="px-6 py-4 text-right">
+                                                <td className="px-6 py-4 text-center">
                                                     <button
                                                         onClick={() => openInitialEditModal(t.runningBalance)}
                                                         className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
@@ -1852,8 +1853,8 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                     ${t.runningBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                                 </td>
                                             )}
-                                            <td className="px-6 py-4 text-right">
-                                                <div className="flex items-center justify-end gap-2">
+                                            <td className="px-6 py-4 text-center">
+                                                <div className="flex items-center justify-center gap-2">
                                                     <button
                                                         onClick={() => openEditModal(t)}
                                                         className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
