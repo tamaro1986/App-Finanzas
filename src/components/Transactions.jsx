@@ -400,7 +400,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 } else {
                     newBalance = originalTx.type === 'income' ? acc.balance - originalTx.amount : acc.balance + originalTx.amount
                 }
-                return { ...acc, balance: newBalance }
+                return { ...acc, balance: round2(newBalance) }
             }
             return acc
         })
@@ -414,7 +414,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 } else {
                     newBalance = updatedTx.type === 'income' ? acc.balance + updatedTx.amount : acc.balance - updatedTx.amount
                 }
-                return { ...acc, balance: newBalance }
+                return { ...acc, balance: round2(newBalance) }
             }
             return acc
         })
@@ -1196,7 +1196,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = tx.type === 'income' ? acc.balance + tx.amount : acc.balance - tx.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
@@ -1212,7 +1212,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = tx.type === 'income' ? acc.balance + tx.amount : acc.balance - tx.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
