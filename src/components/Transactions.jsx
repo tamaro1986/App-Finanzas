@@ -3,7 +3,7 @@
 // ============================================================================
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X, FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle, Edit2, Shield, History } from 'lucide-react'
-import { format, parse, isValid } from 'date-fns'
+import { format, parse, isValid, startOfMonth, endOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { DEFAULT_CATEGORIES, TRANSFER_CATEGORY } from '../constants/categories'
 import * as XLSX from 'xlsx' // Importar librería para Excel
@@ -32,8 +32,8 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const [searchQuery, setSearchQuery] = useState('')
     const [filterType, setFilterType] = useState('all')
     const [filterAccountType, setFilterAccountType] = useState('all')
-    const [filterDateFrom, setFilterDateFrom] = useState('')
-    const [filterDateTo, setFilterDateTo] = useState('')
+    const [filterDateFrom, setFilterDateFrom] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
+    const [filterDateTo, setFilterDateTo] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
     const [filterCategoryId, setFilterCategoryId] = useState('all')
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
     const [editingTransaction, setEditingTransaction] = useState(null)
@@ -1240,6 +1240,95 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         setImportErrors([])
     }
 
+    // ============================================================================
+    // FUNCIÓN: handleExportData
+    // PROPÓSITO: Exportar los movimientos filtrados a un archivo Excel
+    // INCLUYE: Saldo acumulado si se ha seleccionado una cuenta específica
+    // ============================================================================
+    const handleExportData = () => {
+        // Usar las transacciones que están actualmente en la tabla (con saldo si hay cuenta seleccionada)
+        const dataToExport = selectedAccountId ? transactionsWithRunningBalance : filteredTransactions;
+
+        if (dataToExport.length === 0) {
+            addNotification('No hay datos para exportar con los filtros actuales', 'warning');
+            return;
+        }
+
+        addNotification('Generando reporte Excel...', 'info');
+
+        try {
+            // Preparar encabezados
+            const headers = [
+                'Fecha',
+                'Cuenta',
+                'Tipo de Cuenta',
+                'Categoría',
+                'Tipo',
+                'Monto',
+                'Nota',
+                ...(selectedAccountId ? ['Saldo Acumulado'] : [])
+            ];
+
+            // Ordenar cronológicamente ascendente (lo más viejo arriba) para facilitar el cuadre
+            const sortedData = [...dataToExport]
+                .filter(t => !t.isInitialBalance) // Quitamos el saldo inicial de la lista para ponerlo especial si queremos
+                .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            // Si hay saldo inicial, lo ponemos al principio
+            const initialBalanceRow = dataToExport.find(t => t.isInitialBalance);
+            const dataWithInitial = initialBalanceRow ? [initialBalanceRow, ...sortedData] : sortedData;
+
+            const rows = dataWithInitial.map(t => {
+                const account = accounts.find(a => a.id === t.accountId);
+                // Categorías combinadas
+                const allIncomeCats = getCombinedCategories('income');
+                const allExpenseCats = getCombinedCategories('expense');
+                const allCats = [...allIncomeCats, ...allExpenseCats, TRANSFER_CATEGORY];
+                const category = allCats.find(c => c.id === t.categoryId);
+
+                return [
+                    t.date,
+                    account?.name || (t.isInitialBalance ? 'SALDO BASE' : 'N/A'),
+                    account?.type || '---',
+                    t.isInitialBalance ? 'INICIAL' : (t.isTransfer ? 'Transferencia' : (category?.name || 'Varios')),
+                    t.isInitialBalance ? 'NEUTRO' : (t.type === 'income' ? 'Ingreso' : 'Gasto'),
+                    t.isInitialBalance ? 0 : t.amount,
+                    t.note || '',
+                    ...(selectedAccountId ? [t.runningBalance] : [])
+                ];
+            });
+
+            // Crear libro y hoja
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+            // Ajustar anchos
+            ws['!cols'] = [
+                { wch: 12 }, // Fecha
+                { wch: 18 }, // Cuenta
+                { wch: 15 }, // Tipo Cuenta
+                { wch: 18 }, // Categoría
+                { wch: 10 }, // Tipo
+                { wch: 12 }, // Monto
+                { wch: 40 }, // Nota
+                ...(selectedAccountId ? [{ wch: 15 }] : []) // Saldo
+            ];
+
+            XLSX.utils.book_append_sheet(wb, ws, "Reporte_Movimientos");
+
+            // Nombre del archivo
+            const dateStr = format(new Date(), 'yyyy-MM-dd');
+            const accountSuffix = selectedAccountId ? `_${accounts.find(a => a.id === selectedAccountId)?.name.replace(/\s+/g, '_')}` : '';
+            const fileName = `Movimientos${accountSuffix}_${dateStr}.xlsx`;
+
+            XLSX.writeFile(wb, fileName);
+            addNotification('✅ Reporte descargado exitosamente', 'success');
+        } catch (error) {
+            console.error('Error al exportar:', error);
+            addNotification('Error al generar el archivo Excel', 'error');
+        }
+    }
+
     // Función para limpiar todos los filtros
     const clearAllFilters = () => {
         setSearchQuery('')
@@ -1249,6 +1338,25 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         setFilterDateTo('')
         setFilterCategoryId('all')
         setSelectedAccountId(null)
+    }
+
+    // Función para manejar el cambio rápido de mes en los filtros
+    const handleQuickMonthChange = (e) => {
+        const monthVal = e.target.value;
+        if (monthVal === 'all') {
+            setFilterDateFrom('')
+            setFilterDateTo('')
+            return
+        }
+
+        const [year, month] = monthVal.split('-').map(Number);
+        // Crear fechas en el huso horario local (día 1 y último día del mes)
+        const firstDayStr = `${year}-${String(month).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month, 0); // día 0 del siguiente mes
+        const lastDayStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+
+        setFilterDateFrom(firstDayStr);
+        setFilterDateTo(lastDayStr);
     }
 
     // Verificar si hay filtros activos
@@ -1455,8 +1563,16 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         onClick={() => setIsImportModalOpen(true)}
                         className="btn-secondary text-sm"
                     >
-                        <FileSpreadsheet size={18} />
-                        <span>Importar Excel</span>
+                        <Upload size={18} />
+                        <span>Importar</span>
+                    </button>
+                    <button
+                        onClick={handleExportData}
+                        className="btn-primary text-sm bg-gradient-to-r from-blue-600 to-indigo-600 shadow-blue-100 hover:from-blue-700 hover:to-indigo-700"
+                        title="Descargar movimientos filtrados a Excel"
+                    >
+                        <Download size={18} />
+                        <span>Exportar Reporte</span>
                     </button>
                     <button
                         onClick={() => setIsModalOpen(true)}
@@ -1605,6 +1721,31 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                     {allCategoriesForFilter.map(cat => (
                                         <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
                                     ))}
+                                </select>
+                            </div>
+
+                            {/* Filtro por Mes (Acceso Rápido) */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                                    Mes Rápido
+                                </label>
+                                <select
+                                    className="input-field"
+                                    onChange={handleQuickMonthChange}
+                                    value={filterDateFrom ? filterDateFrom.substring(0, 7) : 'all'}
+                                >
+                                    <option value="all">Cualquier mes</option>
+                                    {(() => {
+                                        const months = [];
+                                        const now = new Date();
+                                        for (let i = 0; i < 12; i++) {
+                                            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                                            const val = format(d, 'yyyy-MM');
+                                            const label = d.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+                                            months.push(<option key={val} value={val}>{label.charAt(0).toUpperCase() + label.slice(1)}</option>);
+                                        }
+                                        return months;
+                                    })()}
                                 </select>
                             </div>
 

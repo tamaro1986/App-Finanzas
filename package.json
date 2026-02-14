@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Tu aplicación de finanzas personales ahora incluye **sincronización en la nube** con Supabase.",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --open chrome",
     "build": "vite build",
     "preview": "vite preview"
   },
