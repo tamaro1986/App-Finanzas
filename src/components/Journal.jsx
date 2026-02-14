@@ -106,9 +106,14 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         setNewMedName('')
     }
 
-    const removeMedication = (med) => {
+    const removeMedication = async (med) => {
         if (confirm(`¿Eliminar "${med}" del catálogo?`)) {
-            setMedicationList(medicationList.filter(m => m !== med))
+            const updatedList = medicationList.filter(m => m !== med)
+            setMedicationList(updatedList)
+
+            // Guardar en Supabase (como un solo registro con array)
+            const medRecord = { id: 'medications-list', list: updatedList }
+            await saveToSupabase('journal_med_list', 'journal_med_list', medRecord, [medRecord])
         }
     }
 

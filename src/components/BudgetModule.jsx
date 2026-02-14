@@ -13,6 +13,8 @@ import { useSyncNotifications } from './SyncNotification'
 import IconPicker, { AVAILABLE_ICONS } from './IconPicker'
 import CategoryReport from './CategoryReport'
 
+const round2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100
+
 const ExecutionChart = ({ data }) => {
     const maxVal = Math.max(...data.map(d => Math.max(d.budgeted, d.executed)), 100)
 
@@ -198,7 +200,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         const category = {
             id: crypto.randomUUID(),
             name: newCategory.name,
-            projected: parseFloat(newCategory.amount),
+            projected: round2(parseFloat(newCategory.amount)),
             type: newCategory.type,
             icon: newCategory.icon || (newCategory.type === 'income' ? '💰' : '📄'),
             actual: 0
@@ -484,7 +486,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                             type="number"
                                                             value={cat.projected}
                                                             onChange={(e) => {
-                                                                const val = parseFloat(e.target.value) || 0;
+                                                                const val = round2(parseFloat(e.target.value) || 0);
                                                                 setBudgets(prev => ({
                                                                     ...prev,
                                                                     [currentPeriod]: prev[currentPeriod].map(c => c.id === cat.id ? { ...c, projected: val } : c)

@@ -107,13 +107,22 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
             ? paid.filter(n => n !== installmentNum)
             : [...paid, installmentNum]
 
-        // Recalcular el balance basado en las cuotas pagadas
+        // Recalcular el balance basado en las cuotas pagadas Y pagos manuales
         let newBalance = debt.loanDetails.loanAmount
+
+        // 1. Restar capital de cuotas pagadas
         schedule.forEach((row) => {
             if (newPaid.includes(row.installment)) {
                 newBalance -= row.principal
             }
         })
+
+        // 2. Restar pagos manuales
+        const manualPayments = debt.manualPayments || []
+        manualPayments.forEach(p => {
+            newBalance -= p.amount
+        })
+
         newBalance = round2(Math.max(0, newBalance))
 
         const updatedDebt = {
@@ -170,15 +179,22 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
         setAccounts(updatedAccounts)
         localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
 
+        // Sincronizar con Supabase
+        const updatedDebt = updatedAccounts.find(acc => acc.id === selectedDebtId)
+        if (updatedDebt) {
+            await saveToSupabase('accounts', 'finanzas_accounts', updatedDebt, updatedAccounts)
+        }
+
         setIsExtraPaymentModalOpen(false)
         setExtraPayment({
             amount: '',
             date: format(new Date(), 'yyyy-MM-dd'),
             note: 'Pago realizado'
         })
+        addNotification('✅ Pago manual registrado correctamente', 'success')
     }
 
-    const deleteManualPayment = (debtId, paymentId) => {
+    const deleteManualPayment = async (debtId, paymentId) => {
         if (!window.confirm('¿Eliminar este registro de pago manual?')) return
 
         const updatedAccounts = accounts.map(acc => {
@@ -195,6 +211,13 @@ const DebtModule = ({ accounts = [], setAccounts, transactions = [] }) => {
 
         setAccounts(updatedAccounts)
         localStorage.setItem('finanzas_accounts', JSON.stringify(updatedAccounts))
+
+        // Sincronizar con Supabase
+        const updatedDebt = updatedAccounts.find(acc => acc.id === debtId)
+        if (updatedDebt) {
+            await saveToSupabase('accounts', 'finanzas_accounts', updatedDebt, updatedAccounts)
+        }
+        addNotification('Registro de pago eliminado', 'info')
     }
 
     if (selectedDebtId) {

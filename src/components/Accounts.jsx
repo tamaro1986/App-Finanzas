@@ -12,6 +12,8 @@ import { useSyncNotifications } from './SyncNotification'
 // PROPÓSITO: Gestionar cuentas bancarias, efectivo, tarjetas, etc.
 // CONECTADO A: Supabase tabla 'accounts' + localStorage como fallback
 // ============================================================================
+const round2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100
+
 const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }) => {
     const { addNotification } = useSyncNotifications()
     const [isModalOpen, setIsModalOpen] = useState(false)
@@ -46,12 +48,12 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
             id: crypto.randomUUID(), // Generar ID único
             name: newAccount.name,
             type: newAccount.type,
-            balance: parseFloat(newAccount.balance), // Convertir a número
+            balance: round2(parseFloat(newAccount.balance)), // Convertir a número
             color: newAccount.color,
             // Si es préstamo, incluir detalles del préstamo, si no, null
             loanDetails: newAccount.type === 'Préstamo' ? {
                 ...newAccount.loanDetails,
-                loanAmount: parseFloat(newAccount.loanDetails.loanAmount),
+                loanAmount: round2(parseFloat(newAccount.loanDetails.loanAmount)),
                 interestRate: parseFloat(newAccount.loanDetails.interestRate),
                 lateInterestRate: parseFloat(newAccount.loanDetails.lateInterestRate || 0),
                 term: parseInt(newAccount.loanDetails.term),

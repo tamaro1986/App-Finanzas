@@ -828,7 +828,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         // Revertir: ingreso había aumentado balance, ahora lo restamos
                         newBalance = txToDelete.type === 'income' ? acc.balance - txToDelete.amount : acc.balance + txToDelete.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
