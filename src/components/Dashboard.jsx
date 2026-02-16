@@ -5,7 +5,7 @@ import React, { useState } from 'react'
 import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock, PieChart, ChevronLeft, ChevronRight } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { getLoanTermLabel, getTermColorClass } from '../utils/loanUtils'
+import { calculateDebtBreakdown, getLoanTermLabel, getTermColorClass } from '../utils/loanUtils'
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     <div className="card group hover:border-blue-200 transition-all duration-300">
@@ -66,17 +66,10 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
     const debtsBreakdown = accounts
         .filter(acc => acc.type === 'Préstamo')
         .reduce((sum, loan) => {
-            const remainingMonths = loan.loanDetails
-                ? loan.loanDetails.term - (loan.paidInstallments?.length || 0)
-                : 0
-
-            if (remainingMonths <= 12) {
-                sum.short += loan.balance
-            } else if (remainingMonths <= 60) {
-                sum.medium += loan.balance
-            } else {
-                sum.long += loan.balance
-            }
+            const b = calculateDebtBreakdown(loan)
+            sum.short += b.short
+            sum.medium += b.medium
+            sum.long += b.long
             return sum
         }, { short: 0, medium: 0, long: 0 })
 
