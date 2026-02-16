@@ -73,6 +73,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All')
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄' })
+    const [autoPropagate, setAutoPropagate] = useState(true) // Nueva configuración para propagación automática
 
     // Initialize with default categories if empty for the current period
     // Si no hay presupuesto para el mes actual, copiar automáticamente del mes anterior
@@ -483,7 +484,22 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
                                 <LayoutGrid size={18} className="text-slate-400" /> Catálogo Mensual
                             </h3>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{format(parseISO(currentPeriod + '-01'), 'MMMM yyyy', { locale: es })}</span>
+
+                            {/* Toggle de Sincronización Automática */}
+                            <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-3">
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${autoPropagate ? 'text-blue-600' : 'text-slate-400'}`}>
+                                        Auto-propagar cambios
+                                    </span>
+                                    <button
+                                        onClick={() => setAutoPropagate(!autoPropagate)}
+                                        className={`w-12 h-6 rounded-full transition-all relative ${autoPropagate ? 'bg-blue-600 shadow-lg shadow-blue-200' : 'bg-slate-200'}`}
+                                    >
+                                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${autoPropagate ? 'left-7' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{format(parseISO(currentPeriod + '-01'), 'MMMM yyyy', { locale: es })}</span>
+                            </div>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left font-sans">
@@ -526,11 +542,10 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                                 const val = round2(parseFloat(e.target.value) || 0);
                                                                 const updatedBudgets = { ...budgets }
 
-                                                                const applyToFuture = confirm(`¿Deseas aplicar el cambio en "${cat.name}" también a todos los meses futuros?`)
-
                                                                 const periods = Object.keys(updatedBudgets)
                                                                 periods.forEach(period => {
-                                                                    if (period === currentPeriod || (applyToFuture && period > currentPeriod)) {
+                                                                    // Si autoPropagate está activo, actualiza este mes y futuros. Si no, solo este mes.
+                                                                    if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
                                                                         updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
                                                                             (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
                                                                         )
