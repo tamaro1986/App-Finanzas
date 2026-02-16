@@ -580,85 +580,151 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                             <td colSpan="4" className="px-8 py-20 text-center text-slate-400 italic font-medium">No has definido categorías para este periodo.</td>
                                         </tr>
                                     ) : (
-                                        currentMonthBudgets.map((cat) => (
-                                            <tr key={cat.id} className="group hover:bg-slate-50/80 transition-all">
-                                                <td className="px-8 py-5">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xl bg-slate-50 border border-slate-100 shadow-sm transition-transform group-hover:scale-110`}>
-                                                            {cat.icon || (cat.type === 'income' ? '💰' : '📄')}
-                                                        </div>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
-                                                            <span className={`text-[10px] font-bold uppercase tracking-widest ${cat.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                                {cat.type === 'income' ? 'Ingreso' : 'Gasto'}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-8 py-5 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <span className="text-slate-400 text-xs font-bold">$</span>
-                                                        <input
-                                                            type="number"
-                                                            value={cat.projected}
-                                                            onChange={(e) => {
-                                                                const val = round2(parseFloat(e.target.value) || 0);
-                                                                const updatedBudgets = { ...budgets }
+                                        (() => {
+                                            const incomeCats = currentMonthBudgets.filter(c => c.type === 'income')
+                                            const expenseCats = currentMonthBudgets.filter(c => c.type === 'expense')
 
-                                                                const periods = Object.keys(updatedBudgets)
-                                                                periods.forEach(period => {
-                                                                    // Si autoPropagate está activo, actualiza este mes y futuros. Si no, solo este mes.
-                                                                    if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
-                                                                        updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
-                                                                            (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
-                                                                        )
-                                                                    }
-                                                                })
-                                                                setBudgets(updatedBudgets);
-                                                            }}
-                                                            className="w-24 text-right font-black text-slate-900 bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none transition-all py-1 px-2"
-                                                        />
-                                                    </div>
-                                                </td>
-                                                <td className="px-8 py-5 text-right">
-                                                    {(() => {
-                                                        const executed = transactions
-                                                            .filter(t => {
-                                                                if (!t.date.startsWith(currentPeriod)) return false
-                                                                if (t.type !== cat.type) return false
-                                                                if (t.isTransfer || t.categoryId === 'transfer') return false
-                                                                const txCategory = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
-                                                                return txCategory?.name === cat.name || t.categoryId === cat.id
-                                                            })
-                                                            .reduce((sum, t) => sum + t.amount, 0)
+                                            const renderCategoryRow = (cat) => {
+                                                const executed = transactions
+                                                    .filter(t => {
+                                                        if (!t.date.startsWith(currentPeriod)) return false
+                                                        if (t.type !== cat.type) return false
+                                                        if (t.isTransfer || t.categoryId === 'transfer') return false
+                                                        const txCategory = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                                                        return txCategory?.name === cat.name || t.categoryId === cat.id
+                                                    })
+                                                    .reduce((sum, t) => sum + t.amount, 0)
 
-                                                        const percentage = cat.projected > 0 ? (executed / cat.projected * 100) : 0
-                                                        const isOverBudget = executed > cat.projected && cat.projected > 0
+                                                const percentage = cat.projected > 0 ? (executed / cat.projected * 100) : 0
+                                                const isGoodPerformance = cat.type === 'income' ? executed >= cat.projected : executed <= cat.projected
+                                                const isOverBudget = cat.type === 'expense' && executed > cat.projected && cat.projected > 0
 
-                                                        return (
+                                                return (
+                                                    <tr key={cat.id} className="group hover:bg-slate-50/80 transition-all">
+                                                        <td className="px-8 py-5">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xl bg-slate-50 border border-slate-100 shadow-sm transition-transform group-hover:scale-110`}>
+                                                                    {cat.icon || (cat.type === 'income' ? '💰' : '📄')}
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
+                                                                    <span className={`text-[10px] font-bold uppercase tracking-widest ${cat.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                                                        {cat.type === 'income' ? 'Ingreso' : 'Gasto'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-5 text-right">
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <span className="text-slate-400 text-xs font-bold">$</span>
+                                                                <input
+                                                                    type="number"
+                                                                    value={cat.projected}
+                                                                    onChange={(e) => {
+                                                                        const val = round2(parseFloat(e.target.value) || 0);
+                                                                        const updatedBudgets = { ...budgets }
+
+                                                                        const periods = Object.keys(updatedBudgets)
+                                                                        periods.forEach(period => {
+                                                                            // Si autoPropagate está activo, actualiza este mes y futuros. Si no, solo este mes.
+                                                                            if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
+                                                                                updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
+                                                                                    (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
+                                                                                )
+                                                                            }
+                                                                        })
+                                                                        setBudgets(updatedBudgets);
+                                                                    }}
+                                                                    className="w-24 text-right font-black text-slate-900 bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none transition-all py-1 px-2"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-8 py-5 text-right">
                                                             <div className="flex flex-col items-end gap-1">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="text-slate-400 text-xs font-bold">$</span>
-                                                                    <span className={`font-black text-sm ${isOverBudget ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                                    <span className={`font-black text-sm ${isOverBudget ? 'text-rose-600' : (cat.type === 'income' && executed > 0 ? 'text-emerald-600' : 'text-slate-700')}`}>
                                                                         {executed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                                     </span>
                                                                 </div>
                                                                 {cat.projected > 0 && (
-                                                                    <span className={`text-[10px] font-bold ${isOverBudget ? 'text-rose-500' : 'text-slate-400'}`}>
+                                                                    <span className={`text-[10px] font-bold ${isOverBudget ? 'text-rose-500' : (cat.type === 'income' && executed >= cat.projected ? 'text-emerald-500' : 'text-slate-400')}`}>
                                                                         {percentage.toFixed(0)}%
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                        )
-                                                    })()}
-                                                </td>
-                                                <td className="px-8 py-5 text-right">
-                                                    <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-rose-100">
-                                                        <Trash2 size={18} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))
+                                                        </td>
+                                                        <td className="px-8 py-5 text-right">
+                                                            <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-rose-100">
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            }
+
+                                            const renderSubtotalRow = (title, projectedSum, executedSum, colorClass) => (
+                                                <tr className={`bg-slate-50/50 font-black text-xs uppercase tracking-widest ${colorClass} border-t-2 border-slate-100`}>
+                                                    <td className="px-8 py-4">{title}</td>
+                                                    <td className="px-8 py-4 text-right">
+                                                        <span className="text-[10px] mr-1">$</span>
+                                                        {projectedSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="px-8 py-4 text-right">
+                                                        <span className="text-[10px] mr-1">$</span>
+                                                        {executedSum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="px-8 py-4"></td>
+                                                </tr>
+                                            )
+
+                                            const calculateTypeAmounts = (cats) => {
+                                                const proj = cats.reduce((sum, c) => sum + (c.projected || 0), 0)
+                                                const exec = cats.reduce((sum, cat) => {
+                                                    const catExecuted = transactions
+                                                        .filter(t => {
+                                                            if (!t.date.startsWith(currentPeriod)) return false
+                                                            if (t.type !== cat.type) return false
+                                                            if (t.isTransfer || t.categoryId === 'transfer') return false
+                                                            const txCategory = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                                                            return txCategory?.name === cat.name || t.categoryId === cat.id
+                                                        })
+                                                        .reduce((s, t) => s + t.amount, 0)
+                                                    return sum + catExecuted
+                                                }, 0)
+                                                return { proj, exec }
+                                            }
+
+                                            const incomeTotals = calculateTypeAmounts(incomeCats)
+                                            const expenseTotals = calculateTypeAmounts(expenseCats)
+
+                                            return (
+                                                <>
+                                                    {/* SECCIÓN INGRESOS */}
+                                                    {incomeCats.length > 0 && (
+                                                        <>
+                                                            <tr className="bg-emerald-50/30">
+                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] italic">Sección de Ingresos</td>
+                                                            </tr>
+                                                            {incomeCats.map(renderCategoryRow)}
+                                                            {renderSubtotalRow('Total Ingresos', incomeTotals.proj, incomeTotals.exec, 'text-emerald-700 bg-emerald-50/50')}
+                                                            <tr className="h-6"></tr>
+                                                        </>
+                                                    )}
+
+                                                    {/* SECCIÓN GASTOS */}
+                                                    {expenseCats.length > 0 && (
+                                                        <>
+                                                            <tr className="bg-rose-50/30">
+                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-rose-600 uppercase tracking-[0.2em] italic">Sección de Gastos</td>
+                                                            </tr>
+                                                            {expenseCats.map(renderCategoryRow)}
+                                                            {renderSubtotalRow('Total Gastos', expenseTotals.proj, expenseTotals.exec, 'text-rose-700 bg-rose-50/50')}
+                                                        </>
+                                                    )}
+                                                </>
+                                            )
+                                        })()
                                     )}
                                 </tbody>
                             </table>
