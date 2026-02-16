@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock, PieChart, ChevronL
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { calculateDebtBreakdown, getLoanTermLabel, getTermColorClass } from '../utils/loanUtils'
+import { DEFAULT_CATEGORIES } from '../constants/categories'
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     <div className="card group hover:border-blue-200 transition-all duration-300">
@@ -192,18 +193,154 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Nueva Tarjeta de Análisis por Categoría */}
+                {/* Tarjeta de Análisis por Categoría - Ahora de Ancho Completo en Móvil */}
                 <div
                     onClick={() => setActiveView('analytics')}
-                    className="card min-h-[350px] flex flex-col items-center justify-center text-center p-10 border-dashed border-2 hover:border-blue-200 hover:bg-blue-50/10 cursor-pointer transition-all group"
+                    className="card min-h-[400px] flex flex-col p-8 hover:border-blue-200 hover:bg-blue-50/5 cursor-pointer transition-all group overflow-hidden relative"
                 >
-                    <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-blue-400 group-hover:scale-110 group-hover:bg-blue-100 transition-all">
-                        <PieChart size={32} />
+                    <div className="flex items-center justify-between mb-8">
+                        <div>
+                            <h4 className="font-black text-slate-900 italic uppercase tracking-tighter flex items-center gap-2">
+                                <PieChart size={20} className="text-blue-600" /> Distribución de Gastos
+                            </h4>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                {format(parseISO(selectedPeriod + '-01'), 'MMMM yyyy', { locale: es })}
+                            </p>
+                        </div>
+                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
+                            <TrendingDown size={20} />
+                        </div>
                     </div>
-                    <h4 className="font-bold text-slate-900 mb-1">Análisis por Categoría</h4>
-                    <p className="text-sm text-slate-500 max-w-xs">Haz clic para ver la distribución detallada de tus ingresos y gastos por categoría.</p>
-                    <div className="mt-8 text-2xl font-black text-slate-900 italic">
-                        ${stats.expense.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+
+                    <div className="flex-1 flex flex-col md:flex-row items-center justify-around gap-8">
+                        {/* Gráfico de Dona Simple (SVG) */}
+                        <div className="relative w-48 h-48 shrink-0">
+                            {(() => {
+                                const expenseTransactions = transactions.filter(t =>
+                                    t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer'
+                                );
+
+                                const categoryMap = {};
+                                let total = 0;
+
+                                expenseTransactions.forEach(t => {
+                                    const amount = parseFloat(t.amount) || 0;
+                                    // Usar name de DEFAULT_CATEGORIES o el guardado en la tx
+                                    const cat = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId);
+                                    const name = t.categoryName || cat?.name || 'Otros';
+                                    categoryMap[name] = (categoryMap[name] || 0) + amount;
+                                    total += amount;
+                                });
+
+                                const sortedCategories = Object.entries(categoryMap)
+                                    .map(([name, amount]) => ({ name, amount }))
+                                    .sort((a, b) => b.amount - a.amount)
+                                    .slice(0, 6); // Top 6
+
+                                if (total === 0) {
+                                    return (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 italic">
+                                            <PieChart size={40} className="mb-2 opacity-20" />
+                                            <p className="text-[11px] font-bold uppercase tracking-widest">Sin gastos</p>
+                                        </div>
+                                    );
+                                }
+
+                                const radius = 70;
+                                const center = 100;
+                                const circumference = 2 * Math.PI * radius;
+                                let currentAngle = 0;
+
+                                const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#ec4899', '#f97316', '#64748b'];
+
+                                return (
+                                    <>
+                                        <svg viewBox="0 0 200 200" className="w-full h-full transform -rotate-90">
+                                            {sortedCategories.map((item, index) => {
+                                                const percentage = item.amount / total;
+                                                const strokeDasharray = `${percentage * circumference} ${circumference}`;
+                                                const strokeDashoffset = -(currentAngle / total) * circumference;
+                                                currentAngle += item.amount;
+
+                                                return (
+                                                    <circle
+                                                        key={index}
+                                                        cx={center}
+                                                        cy={center}
+                                                        r={radius}
+                                                        fill="none"
+                                                        stroke={colors[index % colors.length]}
+                                                        strokeWidth="24"
+                                                        strokeDasharray={strokeDasharray}
+                                                        strokeDashoffset={strokeDashoffset}
+                                                        className="transition-all hover:stroke-[28px]"
+                                                    />
+                                                );
+                                            })}
+                                        </svg>
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                                            <p className="text-xl font-black text-slate-900 italic">${total.toLocaleString('es-MX', { maximumFractionDigits: 0 })}</p>
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Leyenda de Categorías */}
+                        <div className="flex-1 w-full space-y-3">
+                            {(() => {
+                                const expenseTransactions = transactions.filter(t =>
+                                    t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer'
+                                );
+
+                                const categoryMap = {};
+                                let total = 0;
+
+                                expenseTransactions.forEach(t => {
+                                    const amount = parseFloat(t.amount) || 0;
+                                    const cat = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId);
+                                    const name = t.categoryName || cat?.name || 'Otros';
+                                    categoryMap[name] = (categoryMap[name] || 0) + amount;
+                                    total += amount;
+                                });
+
+                                const sortedCategories = Object.entries(categoryMap)
+                                    .map(([name, amount]) => ({ name, amount }))
+                                    .sort((a, b) => b.amount - a.amount);
+
+                                const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#ec4899', '#f97316', '#64748b'];
+
+                                if (total === 0) return null;
+
+                                return sortedCategories.slice(0, 5).map((item, index) => (
+                                    <div key={index} className="flex items-center justify-between group/legend">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colors[index % colors.length] }} />
+                                            <span className="text-[11px] font-black text-slate-700 uppercase tracking-tight truncate group-hover/legend:text-blue-600 transition-colors">{item.name}</span>
+                                        </div>
+                                        <span className="text-[11px] font-bold text-slate-400 shrink-0">
+                                            {((item.amount / total) * 100).toFixed(0)}%
+                                        </span>
+                                    </div>
+                                ));
+                            })() || (
+                                    <div className="h-full flex items-center justify-center">
+                                        <p className="text-xs text-slate-400 italic">No hay datos para mostrar</p>
+                                    </div>
+                                )}
+                            {/* Ver más... */}
+                            {(() => {
+                                const expenseCount = transactions.filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod)).length;
+                                return expenseCount > 0 ? (
+                                    <div className="pt-4 border-t border-slate-50 flex justify-center">
+                                        <span className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] group-hover:translate-x-1 transition-transform cursor-pointer flex items-center gap-1">
+                                            Ver detalle completo <ChevronRight size={10} strokeWidth={3} />
+                                        </span>
+                                    </div>
+                                ) : null;
+                            })()}
+                        </div>
                     </div>
                 </div>
 
