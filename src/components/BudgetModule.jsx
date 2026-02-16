@@ -2,7 +2,7 @@
 // IMPORTS: React, iconos, animaciones y categorías
 // ============================================================================
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText } from 'lucide-react'
+import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText, Rocket, RotateCcw } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -111,7 +111,45 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     }, [currentPeriod, budgets, setBudgets])
 
     // ============================================================================
-    // EFFECT: Auto-asignar iconos a categorías existentes que no tengan uno
+    // FUNCIÓN: handleReplicateToYear
+    // PROPÓSITO: Copiar el presupuesto del mes actual a todos los meses restantes del año
+    // ============================================================================
+    const handleReplicateToYear = () => {
+        const [year, month] = currentPeriod.split('-').map(Number)
+        if (!confirm(`¿Deseas proyectar este presupuesto de ${format(parseISO(currentPeriod + '-01'), 'MMMM', { locale: es })} a todos los meses restantes de ${year}?\n\nEsto sobrescribirá los presupuestos de esos meses.`)) return
+
+        const updatedBudgets = { ...budgets }
+        const sourceBudget = budgets[currentPeriod] || []
+
+        for (let m = month + 1; m <= 12; m++) {
+            const targetPeriod = `${year}-${m.toString().padStart(2, '0')}`
+            updatedBudgets[targetPeriod] = sourceBudget.map(cat => ({
+                ...cat,
+                actual: 0
+            }))
+        }
+
+        setBudgets(updatedBudgets)
+        addNotification(`🚀 Presupuesto proyectado hasta diciembre de ${year}`, 'success')
+    }
+
+    const handleResetMonth = () => {
+        if (!confirm(`¿Estás seguro de resetear el presupuesto de ${format(parseISO(currentPeriod + '-01'), 'MMMM yyyy', { locale: es })}?\n\nSe volverá a los valores por defecto.`)) return
+
+        const defaults = [
+            ...DEFAULT_CATEGORIES.income.map(c => ({ id: c.id, name: c.name, icon: c.icon, projected: 0, actual: 0, type: 'income' })),
+            ...DEFAULT_CATEGORIES.expense.map(c => ({ id: c.id, name: c.name, icon: c.icon, projected: 0, actual: 0, type: 'expense' }))
+        ]
+
+        setBudgets(prev => ({
+            ...prev,
+            [currentPeriod]: defaults
+        }))
+        addNotification(`🔄 Presupuesto del mes reseteado correctamente`, 'info')
+    }
+
+    // ================= : ACTUALIZADO : ==========================================
+    // EFFECT: Auto-asignar iconos a categorías existentes 
     // ============================================================================
     useEffect(() => {
         if (!budgets || Object.keys(budgets).length === 0) return
@@ -119,7 +157,6 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         let hasChanged = false
         const updatedBudgets = { ...budgets }
 
-        // Función para encontrar el mejor icono basado en el nombre
         const getBestIcon = (name, type) => {
             const allDefaults = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
             const match = allDefaults.find(c => c.name.toLowerCase() === name.toLowerCase())
@@ -142,7 +179,6 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         })
 
         if (hasChanged) {
-            console.log('🔄 Auto-asignando iconos a categorías existentes...')
             setBudgets(updatedBudgets)
         }
     }, [budgets, setBudgets])
@@ -210,7 +246,13 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
 
         // 🚀 PROPAGACIÓN: Agregar a este mes y a todos los meses FUTUROS existentes
         const updatedBudgets = { ...budgets }
-        const periods = Object.keys(updatedBudgets).sort()
+
+        // Asegurar que el periodo actual existe en el objeto
+        if (!updatedBudgets[currentPeriod]) {
+            updatedBudgets[currentPeriod] = []
+        }
+
+        const periods = Object.keys(updatedBudgets)
 
         periods.forEach(period => {
             if (period >= currentPeriod) {
@@ -294,14 +336,18 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             }
         })
 
-        // Process Transactions - Relacionar por categoryId
+        // Process Transactions - Relacionar por categoryId o nombre de categoría
         transactions.forEach(t => {
             const period = t.date.substring(0, 7)
             const year = t.date.substring(0, 4)
             if (t.type === 'expense' && !t.isTransfer && t.categoryId !== 'transfer') {
-                // Buscar la categoría en DEFAULT_CATEGORIES usando categoryId
-                const category = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
-                const categoryName = category?.name || 'Otros'
+                // 1. Intentar buscar en categorías predefinidas
+                const defaultCat = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+
+                // 2. Si no es predefinida, buscar en las categorías configuradas en el presupuesto del periodo de la transacción
+                const budgetCat = (budgets[period] || []).find(c => c.id === t.categoryId || c.name === t.categoryId)
+
+                const categoryName = defaultCat?.name || budgetCat?.name || 'Otros'
 
                 if (selectedCategoryFilter === 'All' || categoryName === selectedCategoryFilter) {
                     if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
@@ -351,6 +397,24 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                 className="bg-transparent border-none text-sm font-black text-slate-700 focus:ring-0 px-3 py-1.5 uppercase italic"
                             />
                         </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleReplicateToYear}
+                                className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm border border-blue-100 group"
+                                title="Replicar presupuesto al resto del año"
+                            >
+                                <Rocket size={18} className="group-hover:animate-bounce" />
+                            </button>
+                            <button
+                                onClick={handleResetMonth}
+                                className="p-2.5 bg-slate-50 text-slate-600 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-all shadow-sm border border-slate-100"
+                                title="Resetear presupuesto del mes"
+                            >
+                                <RotateCcw size={18} />
+                            </button>
+                        </div>
+
                         <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center gap-2 !py-2.5">
                             <Plus size={18} />
                             <span>Nueva Categoría</span>
@@ -460,13 +524,13 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                             value={cat.projected}
                                                             onChange={(e) => {
                                                                 const val = round2(parseFloat(e.target.value) || 0);
-
-                                                                // 🚀 PROPAGACIÓN: Actualizar este mes y futuros
                                                                 const updatedBudgets = { ...budgets }
-                                                                const periods = Object.keys(updatedBudgets)
 
+                                                                const applyToFuture = confirm(`¿Deseas aplicar el cambio en "${cat.name}" también a todos los meses futuros?`)
+
+                                                                const periods = Object.keys(updatedBudgets)
                                                                 periods.forEach(period => {
-                                                                    if (period >= currentPeriod) {
+                                                                    if (period === currentPeriod || (applyToFuture && period > currentPeriod)) {
                                                                         updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
                                                                             (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
                                                                         )
