@@ -2,7 +2,7 @@
 // IMPORTS: React, iconos, animaciones y categorías
 // ============================================================================
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText, Rocket, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText, Rocket, RotateCcw, ShieldCheck } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -75,8 +75,73 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄' })
     const [autoPropagate, setAutoPropagate] = useState(true) // Nueva configuración para propagación automática
 
+    // ================= : NUEVO : ================================================
+    // FUNCIÓN: refreshCatalog
+    // PROPÓSITO: Asegurar que TODAS las categorías existentes en cualquier mes
+    //           o en las transacciones aparezcan en este mes.
+    // ============================================================================
+    const refreshCatalog = () => {
+        const updatedBudgets = { ...budgets }
+        const currentCats = updatedBudgets[currentPeriod] || []
+
+        // 1. Obtener nombres de todas las categorías que existen en OTROS meses
+        const allOtherCats = new Set()
+        Object.entries(budgets).forEach(([period, cats]) => {
+            if (period !== currentPeriod && Array.isArray(cats)) {
+                cats.forEach(c => allOtherCats.add(JSON.stringify({
+                    name: c.name,
+                    icon: c.icon,
+                    type: c.type,
+                    id: c.id
+                })))
+            }
+        })
+
+        // 2. Obtener nombres de categorías usadas en transacciones
+        transactions.forEach(t => {
+            if (t.categoryId && t.categoryId !== 'transfer') {
+                // Solo si no es una de las default, buscar si existe alguna ref
+                const isDefault = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].some(dc => dc.id === t.categoryId)
+                if (!isDefault) {
+                    // Intentar encontrar el nombre de esta categoría en cualquier mes
+                    const found = Object.values(budgets).flat().find(bc => bc && (bc.id === t.categoryId || bc.name === t.categoryId))
+                    if (found) {
+                        allOtherCats.add(JSON.stringify({
+                            name: found.name,
+                            icon: found.icon,
+                            type: found.type,
+                            id: found.id
+                        }))
+                    }
+                }
+            }
+        })
+
+        let hasNew = false
+        const masterList = Array.from(allOtherCats).map(s => JSON.parse(s))
+
+        masterList.forEach(mc => {
+            const exists = currentCats.some(c => c.name.toLowerCase() === mc.name.toLowerCase() || c.id === mc.id)
+            if (!exists) {
+                currentCats.push({
+                    ...mc,
+                    projected: 0,
+                    actual: 0
+                })
+                hasNew = true
+            }
+        })
+
+        if (hasNew) {
+            setBudgets({
+                ...updatedBudgets,
+                [currentPeriod]: currentCats
+            })
+            addNotification("✅ Catálogo sincronizado con todas tus categorías", "info")
+        }
+    }
+
     // Initialize with default categories if empty for the current period
-    // Si no hay presupuesto para el mes actual, copiar automáticamente del mes anterior
     useEffect(() => {
         if (budgets && !budgets[currentPeriod]) {
             // Intentar copiar del mes anterior
@@ -84,30 +149,21 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             const prevBudgets = budgets[prevPeriod]
 
             if (prevBudgets && prevBudgets.length > 0) {
-                // ✅ Copiar automáticamente del mes anterior PRESERVANDO IDs para propagación
                 const clonedBudgets = prevBudgets.map(b => ({
                     ...b,
-                    actual: 0 // Resetear ejecución real para el nuevo mes
+                    actual: 0
                 }))
-
-                setBudgets(prev => ({
-                    ...prev,
-                    [currentPeriod]: clonedBudgets
-                }))
-
-                const monthName = format(parseISO(`${currentPeriod}-01`), 'MMMM yyyy', { locale: es })
-                addNotification(`✅ Presupuesto de ${monthName} inicializado basado en el mes anterior`, 'success')
+                setBudgets(prev => ({ ...prev, [currentPeriod]: clonedBudgets }))
             } else {
-                // Si no hay mes anterior, usar categorías por defecto
                 const defaults = [
                     ...DEFAULT_CATEGORIES.income.map(c => ({ id: c.id, name: c.name, icon: c.icon, projected: 0, actual: 0, type: 'income' })),
                     ...DEFAULT_CATEGORIES.expense.map(c => ({ id: c.id, name: c.name, icon: c.icon, projected: 0, actual: 0, type: 'expense' }))
                 ]
-                setBudgets(prev => ({
-                    ...prev,
-                    [currentPeriod]: defaults
-                }))
+                setBudgets(prev => ({ ...prev, [currentPeriod]: defaults }))
             }
+        } else if (budgets && budgets[currentPeriod]) {
+            // Si el mes ya existe, verificar si faltan categorías que existen en otros meses/transacciones
+            // Pero solo lo hacemos una vez al cambiar de mes para no entrar en bucle
         }
     }, [currentPeriod, budgets, setBudgets])
 
@@ -400,6 +456,13 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                         </div>
 
                         <div className="flex items-center gap-2">
+                            <button
+                                onClick={refreshCatalog}
+                                className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm border border-emerald-100 group"
+                                title="Sincronizar categorías faltantes"
+                            >
+                                <ShieldCheck size={18} />
+                            </button>
                             <button
                                 onClick={handleReplicateToYear}
                                 className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm border border-blue-100 group"
