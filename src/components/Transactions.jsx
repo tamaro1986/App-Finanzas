@@ -2,7 +2,7 @@
 // IMPORTS: React, iconos, utilidades y funciones de sincronización
 // ============================================================================
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X, FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle, Edit2, Shield, History } from 'lucide-react'
+import { Plus, Trash2, Search, Filter, Calendar, Tag, CreditCard, ArrowUpCircle, ArrowDownCircle, Camera, Image as ImageIcon, X, FileSpreadsheet, Download, Upload, AlertTriangle, CheckCircle, Edit2, Shield, History, Calculator, Delete } from 'lucide-react'
 import { format, parse, isValid, startOfMonth, endOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { DEFAULT_CATEGORIES, TRANSFER_CATEGORY } from '../constants/categories'
@@ -117,6 +117,133 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         attachment: null
     })
 
+    // ============================================================================
+    // ESTADO: CALCULADORA FLOTANTE
+    // ============================================================================
+    const [calcState, setCalcState] = useState({
+        isOpen: false,
+        display: '',
+        equation: '',
+        targetField: null // 'newTx', 'transfer', 'edit'
+    })
+
+    const toggleCalculator = (field) => {
+        if (calcState.isOpen && calcState.targetField === field) {
+            setCalcState({ ...calcState, isOpen: false })
+        } else {
+            // Inicializar con el valor actual del campo si es numérico
+            let initialVal = ''
+            if (field === 'newTx') initialVal = newTx.amount
+            if (field === 'transfer') initialVal = transferData.amount
+            if (field === 'edit') initialVal = editingTransaction?.amount || ''
+
+            setCalcState({
+                isOpen: true,
+                display: initialVal.toString(),
+                equation: initialVal.toString(),
+                targetField: field
+            })
+        }
+    }
+
+    const handleCalcAction = (action) => {
+        setCalcState(prev => {
+            let { display, equation } = prev
+
+            if (action === 'C') {
+                return { ...prev, display: '', equation: '' }
+            }
+
+            if (action === 'back') {
+                return { ...prev, display: display.slice(0, -1), equation: equation.slice(0, -1) }
+            }
+
+            if (action === '=') {
+                try {
+                    // Sanitizar y evaluar de forma básica
+                    // eslint-disable-next-line no-eval
+                    const result = eval(equation.replace(/[^-+*/.0-9]/g, ''))
+                    const rounded = Math.round((result + Number.EPSILON) * 100) / 100
+                    return { ...prev, display: rounded.toString(), equation: rounded.toString() }
+                } catch (e) {
+                    return { ...prev, display: 'Error' }
+                }
+            }
+
+            if (action === 'ok') {
+                const finalVal = display === 'Error' ? '' : display
+                if (prev.targetField === 'newTx') setNewTx({ ...newTx, amount: finalVal })
+                if (prev.targetField === 'transfer') setTransferData({ ...transferData, amount: finalVal })
+                if (prev.targetField === 'edit') setEditingTransaction({ ...editingTransaction, amount: finalVal })
+                return { ...prev, isOpen: false }
+            }
+
+            // Agregar número u operador
+            const lastChar = equation.slice(-1)
+            const isOperator = ['+', '-', '*', '/'].includes(action)
+            const lastIsOperator = ['+', '-', '*', '/'].includes(lastChar)
+
+            if (isOperator && lastIsOperator) {
+                // Reemplazar operador si ya hay uno
+                return { ...prev, equation: equation.slice(0, -1) + action, display: action }
+            }
+
+            return {
+                ...prev,
+                display: isOperator ? action : (['+', '-', '*', '/'].includes(display) ? action : display + action),
+                equation: equation + action
+            }
+        })
+    }
+
+    const CalculatorUI = () => {
+        if (!calcState.isOpen) return null
+
+        return (
+            <div className="absolute right-0 top-full mt-2 z-[90] bg-white rounded-3xl shadow-2xl border border-slate-100 p-5 w-72 animate-in zoom-in-95 slide-in-from-top-2 duration-300">
+                <div className="bg-slate-900 rounded-2xl p-4 mb-4 text-right">
+                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1 truncate h-4">
+                        {calcState.equation || '0'}
+                    </div>
+                    <div className="text-2xl font-black text-white truncate">
+                        {calcState.display || '0'}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                    {/* Fila 1 */}
+                    <button type="button" onClick={() => handleCalcAction('C')} className="p-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-colors">C</button>
+                    <button type="button" onClick={() => handleCalcAction('/')} className="p-3 bg-slate-50 text-slate-600 rounded-xl font-black hover:bg-slate-100 transition-colors">/</button>
+                    <button type="button" onClick={() => handleCalcAction('*')} className="p-3 bg-slate-50 text-slate-600 rounded-xl font-black hover:bg-slate-100 transition-colors">*</button>
+                    <button type="button" onClick={() => handleCalcAction('back')} className="p-3 bg-slate-50 text-slate-400 rounded-xl font-black hover:bg-slate-100 transition-colors flex items-center justify-center"><Delete size={18} /></button>
+
+                    {/* Fila 2 */}
+                    <button type="button" onClick={() => handleCalcAction('7')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">7</button>
+                    <button type="button" onClick={() => handleCalcAction('8')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">8</button>
+                    <button type="button" onClick={() => handleCalcAction('9')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">9</button>
+                    <button type="button" onClick={() => handleCalcAction('-')} className="p-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-colors">-</button>
+
+                    {/* Fila 3 */}
+                    <button type="button" onClick={() => handleCalcAction('4')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">4</button>
+                    <button type="button" onClick={() => handleCalcAction('5')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">5</button>
+                    <button type="button" onClick={() => handleCalcAction('6')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">6</button>
+                    <button type="button" onClick={() => handleCalcAction('+')} className="p-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-colors">+</button>
+
+                    {/* Fila 4 */}
+                    <button type="button" onClick={() => handleCalcAction('1')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">1</button>
+                    <button type="button" onClick={() => handleCalcAction('2')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">2</button>
+                    <button type="button" onClick={() => handleCalcAction('3')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">3</button>
+                    <button type="button" onClick={() => handleCalcAction('=')} className="p-3 bg-blue-600 text-white rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all">=</button>
+
+                    {/* Fila 5 */}
+                    <button type="button" onClick={() => handleCalcAction('0')} className="col-span-2 p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">0</button>
+                    <button type="button" onClick={() => handleCalcAction('.')} className="p-3 bg-slate-50 text-slate-800 rounded-xl font-black hover:bg-white shadow-sm transition-all border border-transparent hover:border-slate-100">.</button>
+                    <button type="button" onClick={() => handleCalcAction('ok')} className="p-3 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all">OK</button>
+                </div>
+            </div>
+        )
+    }
+
     // Estados para transferencias
     const [transferData, setTransferData] = useState({
         date: format(new Date(), 'yyyy-MM-dd'),
@@ -175,6 +302,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // ============================================================================
     const closeModal = () => {
         setIsModalOpen(false)
+        setCalcState({ isOpen: false, display: '', equation: '', targetField: null })
 
         // Resetear newTx
         setNewTx({
@@ -2328,11 +2456,23 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Monto ($)</label>
-                                        <input
-                                            type="number" step="0.01" required placeholder="0.00" className="input-field"
-                                            value={transferData.amount} onChange={e => setTransferData({ ...transferData, amount: e.target.value })}
-                                        />
+                                        <div className="flex items-center justify-between pl-1">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monto ($)</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleCalculator('transfer')}
+                                                className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'transfer' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
+                                            >
+                                                <Calculator size={14} />
+                                            </button>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="number" step="0.01" required placeholder="0.00" className="input-field"
+                                                value={transferData.amount} onChange={e => setTransferData({ ...transferData, amount: e.target.value })}
+                                            />
+                                            {calcState.isOpen && calcState.targetField === 'transfer' && <CalculatorUI />}
+                                        </div>
                                     </div>
 
                                     <div className="space-y-2">
@@ -2360,11 +2500,23 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Monto ($)</label>
-                                            <input
-                                                type="number" step="0.01" required placeholder="0.00" className="input-field"
-                                                value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })}
-                                            />
+                                            <div className="flex items-center justify-between pl-1">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monto ($)</label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleCalculator('newTx')}
+                                                    className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'newTx' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
+                                                >
+                                                    <Calculator size={14} />
+                                                </button>
+                                            </div>
+                                            <div className="relative">
+                                                <input
+                                                    type="number" step="0.01" required placeholder="0.00" className="input-field"
+                                                    value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })}
+                                                />
+                                                {calcState.isOpen && calcState.targetField === 'newTx' && <CalculatorUI />}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -2482,11 +2634,23 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Monto ($)</label>
-                                    <input
-                                        type="number" step="0.01" required placeholder="0.00" className="input-field"
-                                        value={editingTransaction.amount} onChange={e => setEditingTransaction({ ...editingTransaction, amount: e.target.value })}
-                                    />
+                                    <div className="flex items-center justify-between pl-1">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monto ($)</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleCalculator('edit')}
+                                            className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'edit' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
+                                        >
+                                            <Calculator size={14} />
+                                        </button>
+                                    </div>
+                                    <div className="relative">
+                                        <input
+                                            type="number" step="0.01" required placeholder="0.00" className="input-field"
+                                            value={editingTransaction.amount} onChange={e => setEditingTransaction({ ...editingTransaction, amount: e.target.value })}
+                                        />
+                                        {calcState.isOpen && calcState.targetField === 'edit' && <CalculatorUI />}
+                                    </div>
                                 </div>
                             </div>
 

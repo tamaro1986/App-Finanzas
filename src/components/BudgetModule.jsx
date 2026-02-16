@@ -83,11 +83,10 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             const prevBudgets = budgets[prevPeriod]
 
             if (prevBudgets && prevBudgets.length > 0) {
-                // ✅ Copiar automáticamente del mes anterior
+                // ✅ Copiar automáticamente del mes anterior PRESERVANDO IDs para propagación
                 const clonedBudgets = prevBudgets.map(b => ({
                     ...b,
-                    id: crypto.randomUUID(),
-                    actual: 0
+                    actual: 0 // Resetear ejecución real para el nuevo mes
                 }))
 
                 setBudgets(prev => ({
@@ -96,7 +95,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                 }))
 
                 const monthName = format(parseISO(`${currentPeriod}-01`), 'MMMM yyyy', { locale: es })
-                addNotification(`✅ Presupuesto de ${monthName} creado automáticamente`, 'success')
+                addNotification(`✅ Presupuesto de ${monthName} inicializado basado en el mes anterior`, 'success')
             } else {
                 // Si no hay mes anterior, usar categorías por defecto
                 const defaults = [
@@ -146,7 +145,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             console.log('🔄 Auto-asignando iconos a categorías existentes...')
             setBudgets(updatedBudgets)
         }
-    }, [])
+    }, [budgets, setBudgets])
 
     // Flag para evitar el primer guardado (que suele estar vacío antes de cargar datos)
     const isFirstRun = useRef(true)
@@ -196,25 +195,39 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         e.preventDefault()
         if (!newCategory.name || !newCategory.amount) return
 
+        const categoryId = crypto.randomUUID()
+        const amount = round2(parseFloat(newCategory.amount))
+
         // Crear objeto de categoría
         const category = {
-            id: crypto.randomUUID(),
+            id: categoryId,
             name: newCategory.name,
-            projected: round2(parseFloat(newCategory.amount)),
+            projected: amount,
             type: newCategory.type,
             icon: newCategory.icon || (newCategory.type === 'income' ? '💰' : '📄'),
             actual: 0
         }
 
-        // Actualizar presupuestos (se sincroniza automáticamente)
-        setBudgets(prev => ({
-            ...prev,
-            [currentPeriod]: [...(prev[currentPeriod] || []), category]
-        }))
+        // 🚀 PROPAGACIÓN: Agregar a este mes y a todos los meses FUTUROS existentes
+        const updatedBudgets = { ...budgets }
+        const periods = Object.keys(updatedBudgets).sort()
+
+        periods.forEach(period => {
+            if (period >= currentPeriod) {
+                const currentCats = updatedBudgets[period] || []
+                // Evitar duplicados por nombre
+                if (!currentCats.some(c => c.name.toLowerCase() === category.name.toLowerCase())) {
+                    updatedBudgets[period] = [...currentCats, { ...category }]
+                }
+            }
+        })
+
+        setBudgets(updatedBudgets)
 
         // Resetear formulario
         setNewCategory({ name: '', amount: '', type: 'expense', icon: '📄' })
         setIsModalOpen(false)
+        addNotification(`✅ Categoría "${category.name}" agregada y replicada a meses futuros`, 'success')
     }
 
     // ============================================================================
@@ -222,12 +235,20 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     // PROPÓSITO: Eliminar categoría del presupuesto
     // SINCRONIZA: Con Supabase automáticamente via useEffect
     // ============================================================================
-    const handleDeleteCategory = (id) => {
-        if (!confirm('¿Estás seguro de eliminar esta categoría?')) return
-        setBudgets(prev => ({
-            ...prev,
-            [currentPeriod]: prev[currentPeriod].filter(c => c.id !== id)
-        }))
+    const handleDeleteCategory = (id, name) => {
+        if (!confirm(`¿Estás seguro de eliminar la categoría "${name}"?\n\nEsto también la eliminará de todos los meses futuros.`)) return
+
+        const updatedBudgets = { ...budgets }
+        const periods = Object.keys(updatedBudgets)
+
+        periods.forEach(period => {
+            if (period >= currentPeriod) {
+                updatedBudgets[period] = (updatedBudgets[period] || []).filter(c => c.id !== id && c.name !== name)
+            }
+        })
+
+        setBudgets(updatedBudgets)
+        addNotification(`Categoría "${name}" eliminada de este mes y futuros.`, 'info')
     }
 
     // ============================================================================
@@ -235,53 +256,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
     // PROPÓSITO: Copiar categorías y montos del mes anterior al mes actual
     // SINCRONIZA: Con Supabase automáticamente via useEffect
     // ============================================================================
-    const clonePreviousBudget = () => {
-        const prevPeriod = format(subMonths(parseISO(`${currentPeriod}-01`), 1), 'yyyy-MM')
-        const prevMonthName = format(parseISO(`${prevPeriod}-01`), 'MMMM yyyy', { locale: es })
-        const currentMonthName = format(parseISO(`${currentPeriod}-01`), 'MMMM yyyy', { locale: es })
-        const prevBudgets = budgets[prevPeriod]
-
-        // Verificar si existe presupuesto del mes anterior
-        if (!prevBudgets || prevBudgets.length === 0) {
-            alert(`❌ No hay presupuesto guardado para ${prevMonthName}.\n\nPrimero debes crear un presupuesto para ese mes.`)
-            return
-        }
-
-        // Contar categorías del mes anterior
-        const categoryCount = prevBudgets.length
-        const totalAmount = prevBudgets.reduce((sum, b) => sum + (b.projected || 0), 0)
-
-        // Mensaje de confirmación más claro
-        let confirmMessage = `📋 Copiar presupuesto de ${prevMonthName}\n\n`
-        confirmMessage += `Se copiarán ${categoryCount} categorías con un total de $${totalAmount.toLocaleString()} USD\n\n`
-
-        if (currentMonthBudgets.length > 0) {
-            confirmMessage += `⚠️ ATENCIÓN: Ya tienes ${currentMonthBudgets.length} categorías en ${currentMonthName}.\nEstas serán REEMPLAZADAS por las de ${prevMonthName}.\n\n`
-        } else {
-            confirmMessage += `✅ Se crearán estas categorías para ${currentMonthName}\n\n`
-        }
-
-        confirmMessage += `¿Deseas continuar?`
-
-        if (!confirm(confirmMessage)) {
-            return
-        }
-
-        // Clonar presupuestos con nuevos IDs y resetear valores actuales
-        const clonedBudgets = prevBudgets.map(b => ({
-            ...b,
-            id: crypto.randomUUID(),
-            actual: 0
-        }))
-
-        setBudgets(prev => ({
-            ...prev,
-            [currentPeriod]: clonedBudgets
-        }))
-
-        // Notificación de éxito
-        alert(`✅ ¡Listo! Se copiaron ${categoryCount} categorías de ${prevMonthName} a ${currentMonthName}`)
-    }
+    // Removida función manual de clonar ya que ahora es automática y bi-direccional
 
     // Unique category names for filtering
     const allCategoryNames = useMemo(() => {
@@ -367,20 +342,18 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                 </div>
 
                 {activeTab === 'config' && (
-                    <div className="flex flex-wrap items-center gap-2">
-                        <input
-                            type="month"
-                            value={currentPeriod}
-                            onChange={(e) => setCurrentPeriod(e.target.value)}
-                            className="input-field w-auto min-w-[150px] font-semibold text-slate-700 bg-white shadow-sm"
-                        />
-                        <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center bg-slate-100 rounded-2xl p-1 shadow-inner border border-slate-200">
+                            <input
+                                type="month"
+                                value={currentPeriod}
+                                onChange={(e) => setCurrentPeriod(e.target.value)}
+                                className="bg-transparent border-none text-sm font-black text-slate-700 focus:ring-0 px-3 py-1.5 uppercase italic"
+                            />
+                        </div>
+                        <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center gap-2 !py-2.5">
                             <Plus size={18} />
-                            <span className="hidden sm:inline">Nueva Categoría</span>
-                        </button>
-                        <button onClick={clonePreviousBudget} className="btn-secondary flex items-center gap-2">
-                            <Plus size={18} />
-                            <span className="hidden sm:inline">Clonar Anterior</span>
+                            <span>Nueva Categoría</span>
                         </button>
                     </div>
                 )}
@@ -412,12 +385,12 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                 <div className="space-y-8 animate-in fade-in duration-500">
                     {/* Summary Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="card border-none shadow-sm bg-gradient-to-br from-blue-600 to-blue-700 text-white group overflow-hidden relative">
+                        <div className="card border-none shadow-sm bg-blue-600 text-white group overflow-hidden relative">
                             <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
-                            <p className="text-blue-100 text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10">Límite de Gastos</p>
+                            <p className="text-blue-100 text-[10px] font-bold uppercase tracking-[0.2em] mb-1 relative z-10 italic">Límite Proyectado</p>
                             <div className="flex items-baseline gap-1 relative z-10">
-                                <span className="text-3xl font-black">${totalProjected.toLocaleString()}</span>
-                                <span className="text-[10px] font-bold text-blue-200">USD</span>
+                                <span className="text-4xl font-black italic tracking-tighter">${totalProjected.toLocaleString()}</span>
+                                <span className="text-[10px] font-bold text-blue-200 uppercase">USD</span>
                             </div>
                         </div>
                         <div className="card border-none shadow-sm bg-white">
@@ -487,10 +460,19 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                             value={cat.projected}
                                                             onChange={(e) => {
                                                                 const val = round2(parseFloat(e.target.value) || 0);
-                                                                setBudgets(prev => ({
-                                                                    ...prev,
-                                                                    [currentPeriod]: prev[currentPeriod].map(c => c.id === cat.id ? { ...c, projected: val } : c)
-                                                                }));
+
+                                                                // 🚀 PROPAGACIÓN: Actualizar este mes y futuros
+                                                                const updatedBudgets = { ...budgets }
+                                                                const periods = Object.keys(updatedBudgets)
+
+                                                                periods.forEach(period => {
+                                                                    if (period >= currentPeriod) {
+                                                                        updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
+                                                                            (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
+                                                                        )
+                                                                    }
+                                                                })
+                                                                setBudgets(updatedBudgets);
                                                             }}
                                                             className="w-24 text-right font-black text-slate-900 bg-transparent border-b-2 border-transparent hover:border-slate-200 focus:border-blue-500 focus:outline-none transition-all py-1 px-2"
                                                         />
@@ -529,7 +511,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                     })()}
                                                 </td>
                                                 <td className="px-8 py-5 text-right">
-                                                    <button onClick={() => handleDeleteCategory(cat.id)} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-rose-100">
+                                                    <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="p-2.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 shadow-sm border border-transparent hover:border-rose-100">
                                                         <Trash2 size={18} />
                                                     </button>
                                                 </td>

@@ -100,7 +100,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
         setMedicationList(updatedList)
 
         // Guardar en Supabase (como un solo registro con array)
-        const medRecord = { id: 'medications-list', list: updatedList }
+        const medRecord = { id: '00000000-0000-1000-8000-000000000001', list: updatedList }
         await saveToSupabase('journal_med_list', 'journal_med_list', medRecord, [medRecord])
 
         setNewMedName('')
@@ -112,7 +112,7 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
             setMedicationList(updatedList)
 
             // Guardar en Supabase (como un solo registro con array)
-            const medRecord = { id: 'medications-list', list: updatedList }
+            const medRecord = { id: '00000000-0000-1000-8000-000000000001', list: updatedList }
             await saveToSupabase('journal_med_list', 'journal_med_list', medRecord, [medRecord])
         }
     }

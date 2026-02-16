@@ -5,6 +5,7 @@ import React, { useState } from 'react'
 import { TrendingUp, TrendingDown, Wallet, CreditCard, Clock, PieChart, ChevronLeft, ChevronRight } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getLoanTermLabel, getTermColorClass } from '../utils/loanUtils'
 
 const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     <div className="card group hover:border-blue-200 transition-all duration-300">
@@ -57,18 +58,44 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
         .filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer')
         .reduce((sum, t) => sum + t.amount, 0)
 
-    // El Balance Total debe ser la suma real de los saldos de todas las cuentas
-    const totalBalance = accounts.reduce((sum, acc) => {
-        if (acc.type === 'Préstamo') return sum - acc.balance;
-        return sum + acc.balance;
-    }, 0)
+    // Calcular saldos por categorías para liquidez
+    const assets = accounts
+        .filter(acc => acc.type !== 'Préstamo')
+        .reduce((sum, acc) => sum + acc.balance, 0)
+
+    const debtsBreakdown = accounts
+        .filter(acc => acc.type === 'Préstamo')
+        .reduce((sum, loan) => {
+            const remainingMonths = loan.loanDetails
+                ? loan.loanDetails.term - (loan.paidInstallments?.length || 0)
+                : 0
+
+            if (remainingMonths <= 12) {
+                sum.short += loan.balance
+            } else if (remainingMonths <= 60) {
+                sum.medium += loan.balance
+            } else {
+                sum.long += loan.balance
+            }
+            return sum
+        }, { short: 0, medium: 0, long: 0 })
+
+    const totalDebts = debtsBreakdown.short + debtsBreakdown.medium + debtsBreakdown.long
+    const netBalance = assets - totalDebts
 
     // Obtener las 5 transacciones más recientes
     const recentTransactions = [...transactions]
         .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, 5)
 
-    const stats = { balance: totalBalance, income, expense, recentTransactions }
+    const stats = {
+        balance: netBalance,
+        assets,
+        debts: debtsBreakdown,
+        income,
+        expense,
+        recentTransactions
+    }
     const todayStr = format(new Date(), "EEEE, d 'de' MMMM yyyy", { locale: es })
 
     return (
@@ -107,13 +134,56 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
             </header>
 
             {/* Widgets Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard
-                    title="Balance Total"
-                    amount={stats.balance}
-                    icon={Wallet}
-                    colorClass="bg-blue-600 text-blue-600"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Patrimonio Neto / Balance Card - Toma 2 columnas en desktop y tablet */}
+                <div className="md:col-span-2 card bg-white border-slate-200 overflow-hidden relative group shadow-sm hover:shadow-md transition-all">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700" />
+
+                    <div className="relative p-6">
+                        <div className="flex items-center gap-4 mb-8">
+                            <div className="p-3 bg-blue-600 rounded-2xl text-white shadow-xl shadow-blue-200/50">
+                                <Wallet size={24} strokeWidth={2.5} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Balance Total (Patrimonio)</p>
+                                <h3 className={`text-4xl font-black tracking-tight ${stats.balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                                    ${stats.balance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                </h3>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group/item hover:bg-slate-50 hover:border-blue-100 transition-all">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" /> Corto Plazo
+                                </p>
+                                <p className="text-sm font-black text-slate-800 italic">
+                                    ${stats.debts.short.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[8px] text-slate-400 font-bold mt-1 uppercase">Vence ≤ 1 año</p>
+                            </div>
+                            <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group/item hover:bg-slate-50 hover:border-blue-100 transition-all">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Mediano Plazo
+                                </p>
+                                <p className="text-sm font-black text-slate-800 italic">
+                                    ${stats.debts.medium.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[8px] text-slate-400 font-bold mt-1 uppercase">1 a 5 años</p>
+                            </div>
+                            <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group/item hover:bg-slate-50 hover:border-blue-100 transition-all">
+                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Largo Plazo
+                                </p>
+                                <p className="text-sm font-black text-slate-800 italic">
+                                    ${stats.debts.long.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[8px] text-slate-400 font-bold mt-1 uppercase">Vence &gt; 5 años</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <StatCard
                     title={`Ingresos de ${format(parseISO(selectedPeriod + '-01'), 'MMMM', { locale: es })}`}
                     amount={stats.income}
@@ -162,7 +232,14 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
                                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: acc.color }} />
                                             <div>
                                                 <p className="text-sm font-bold text-slate-900">{acc.name}</p>
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{acc.type}</p>
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{acc.type}</p>
+                                                    {acc.type === 'Préstamo' && (
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase border ${getTermColorClass(getLoanTermLabel(acc))}`}>
+                                                            {getLoanTermLabel(acc)}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                         <p className="text-sm font-bold text-slate-900">

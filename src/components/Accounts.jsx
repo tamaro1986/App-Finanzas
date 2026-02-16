@@ -3,6 +3,7 @@
 // ============================================================================
 import React, { useState, useEffect } from 'react'
 import { Plus, CreditCard, Wallet, Trash2 } from 'lucide-react'
+import { getLoanTermLabel, getTermColorClass } from '../utils/loanUtils'
 // Importar funciones de sincronización con Supabase
 import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supabaseSync'
 import { useSyncNotifications } from './SyncNotification'
@@ -175,7 +176,14 @@ const Accounts = ({ accounts, setAccounts, setActiveView, setSelectedAccountId }
                                 </button>
                             </div>
                             <h4 className="font-bold text-slate-900 mb-1">{acc.name}</h4>
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">{acc.type}</p>
+                            <div className="flex items-center gap-2 mb-4">
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{acc.type}</p>
+                                {acc.type === 'Préstamo' && (
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border ${getTermColorClass(getLoanTermLabel(acc))}`}>
+                                        {getLoanTermLabel(acc)}
+                                    </span>
+                                )}
+                            </div>
                             <p className="text-2xl font-bold text-slate-900">
                                 ${acc.balance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                             </p>

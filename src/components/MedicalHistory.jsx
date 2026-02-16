@@ -366,10 +366,23 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                                                     )}
                                                 </div>
 
-                                                {/* Plan de Medicamentos */}
+                                                {/* Plan de Medicamentos - Rediseño más compacto */}
                                                 <div className="space-y-3 pt-4">
-                                                    <h6 className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-2">Plan Terapéutico</h6>
-                                                    <div className="flex flex-col gap-3">
+                                                    <div className="flex items-center justify-between px-2">
+                                                        <h6 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-2">
+                                                            <Activity size={12} className="text-blue-500" /> Plan Terapéutico
+                                                        </h6>
+                                                        {(() => {
+                                                            const rawMeds = r.medications || r.medicationsList || [];
+                                                            return Array.isArray(rawMeds) && rawMeds.length > 0 && (
+                                                                <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[9px] font-black rounded-full border border-blue-100 uppercase tracking-tighter">
+                                                                    {rawMeds.length} Items
+                                                                </span>
+                                                            )
+                                                        })()}
+                                                    </div>
+
+                                                    <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
                                                         {(() => {
                                                             let rawMeds = r.medications || r.medicationsList || [];
                                                             let medsArray = [];
@@ -382,10 +395,12 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                                                             } catch (err) { medsArray = []; }
 
                                                             if (!medsArray || medsArray.length === 0) {
-                                                                return <div className="p-4 bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-center py-6">
-                                                                    <Pill size={20} className="mx-auto text-slate-200 mb-1" />
-                                                                    <p className="text-[9px] font-bold text-slate-400 uppercase italic">Sin medicamentos</p>
-                                                                </div>;
+                                                                return (
+                                                                    <div className="p-10 bg-slate-50/30 text-center">
+                                                                        <Pill size={24} className="mx-auto text-slate-200 mb-2" />
+                                                                        <p className="text-[10px] font-black text-slate-400 uppercase italic tracking-widest">Sin medicamentos asignados</p>
+                                                                    </div>
+                                                                );
                                                             }
 
                                                             return medsArray.map((m, i) => {
@@ -409,29 +424,31 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                                                                 }
 
                                                                 return (
-                                                                    <div key={i} className="group/med bg-white rounded-[1.75rem] border border-slate-100 p-4 shadow-sm hover:border-blue-100 hover:shadow-md transition-all">
-                                                                        <div className="flex items-center gap-3 mb-2">
-                                                                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/med:bg-blue-600 group-hover/med:text-white transition-colors">
+                                                                    <div key={i} className={`p-4 ${i !== 0 ? 'border-t border-slate-50' : ''} hover:bg-slate-50/50 transition-all group/item`}>
+                                                                        <div className="flex items-start justify-between gap-3">
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <div className="flex items-center flex-wrap gap-2 mb-1">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-200" />
+                                                                                    <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight truncate">{name}</span>
+                                                                                    {endDateTooltip && (
+                                                                                        <span className="px-2 py-0.5 bg-rose-50 text-rose-600 text-[8px] font-black rounded-lg border border-rose-100 uppercase flex items-center gap-1">
+                                                                                            <Clock size={8} /> {endDateTooltip}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        <span className="text-slate-300">D:</span> {dose || "N/A"}
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        <span className="text-slate-300">F:</span> {freq || "A demanda"}
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="shrink-0 w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover/item:bg-blue-50 group-hover/item:text-blue-500 transition-colors">
                                                                                 <Pill size={14} />
                                                                             </div>
-                                                                            <span className="text-xs font-black text-slate-900 uppercase tracking-tight">{name}</span>
                                                                         </div>
-                                                                        <div className="grid grid-cols-2 gap-2">
-                                                                            <div className="bg-slate-50/50 rounded-xl p-2 px-3 border border-slate-50">
-                                                                                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mb-0.5 leading-none">Dosis</p>
-                                                                                <p className="text-[10px] font-black text-slate-700 leading-none">{dose || "N/A"}</p>
-                                                                            </div>
-                                                                            <div className="bg-slate-50/50 rounded-xl p-2 px-3 border border-slate-50">
-                                                                                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mb-0.5 leading-none">Frecuencia</p>
-                                                                                <p className="text-[10px] font-black text-slate-700 leading-none">{freq || "A demanda"}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        {endDateTooltip && (
-                                                                            <div className="mt-3 py-1.5 px-3 bg-rose-50/50 rounded-xl flex items-center gap-2 border border-rose-50">
-                                                                                <Clock size={10} className="text-rose-500" />
-                                                                                <p className="text-[9px] font-black text-rose-600 uppercase">Finaliza: <span className="text-rose-700">{endDateTooltip}</span></p>
-                                                                            </div>
-                                                                        )}
                                                                     </div>
                                                                 );
                                                             });
@@ -706,24 +723,29 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                                             </div>
 
                                             {Array.isArray(newRecord.medicationsList) && newRecord.medicationsList.length > 0 && (
-                                                <div className="mt-4 space-y-3 border-t border-slate-200 pt-6">
-                                                    {newRecord.medicationsList.map((m, i) => (
-                                                        <div key={i} className={`flex items-center justify-between px-6 py-4 rounded-[2rem] border transition-all shadow-sm ${editIndex === i ? 'bg-amber-50 border-amber-200 scale-102 ring-4 ring-amber-100/50' : 'bg-white border-slate-100 hover:border-slate-200'}`}>
-                                                            <div className="flex items-center gap-4">
-                                                                <div className={`p-3 rounded-xl ${editIndex === i ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}><Pill size={18} /></div>
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-black text-slate-900 uppercase text-sm tracking-tight leading-tight">{m.name}</span>
-                                                                    <span className="text-[11px] text-slate-500 font-bold uppercase tracking-widest italic leading-none mt-1">
-                                                                        {m.dose} • {m.frequency} • {m.days} días
-                                                                    </span>
+                                                <div className="mt-6 space-y-2 border-t border-slate-200 pt-6">
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">Medicamentos Agregados</p>
+                                                    <div className="bg-white rounded-[1.5rem] border border-slate-100 overflow-hidden shadow-sm">
+                                                        {newRecord.medicationsList.map((m, i) => (
+                                                            <div key={i} className={`flex items-center justify-between px-5 py-3 ${i !== 0 ? 'border-t border-slate-50' : ''} transition-all ${editIndex === i ? 'bg-amber-50/50' : 'hover:bg-slate-50/30'}`}>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${editIndex === i ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                                        <Pill size={14} />
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-black text-slate-900 uppercase text-xs tracking-tight">{m.name}</span>
+                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                                                                            {m.dose} • {m.frequency} • {m.days}d
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <button type="button" onClick={() => editMed(i)} className="p-2 text-slate-300 hover:text-blue-500 transition-all" title="Editar"><Pencil size={14} /></button>
+                                                                    <button type="button" onClick={() => removeMed(i)} className="p-2 text-slate-300 hover:text-rose-500 transition-all" title="Eliminar"><X size={16} /></button>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-1">
-                                                                <button type="button" onClick={() => editMed(i)} className="text-slate-300 hover:text-blue-500 transition-colors p-2" title="Editar"><Pencil size={14} /></button>
-                                                                <button type="button" onClick={() => removeMed(i)} className="text-slate-300 hover:text-rose-500 transition-colors p-2" title="Eliminar"><X size={16} /></button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
