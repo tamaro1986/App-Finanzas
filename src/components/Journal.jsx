@@ -321,8 +321,15 @@ Los pensamientos son como nubes en el cielo: vienen y van. No tienes que aferrar
         }
     }
 
-    const handleUpdateTccReevaluation = (id, text) => {
-        setTccEntries(tccEntries.map(e => e.id === id ? { ...e, reevaluation: text } : e))
+    const handleUpdateTccReevaluation = async (id, text) => {
+        const updatedEntry = tccEntries.find(e => e.id === id)
+        if (!updatedEntry) return
+        const updated = { ...updatedEntry, reevaluation: text }
+        const updatedEntries = tccEntries.map(e => e.id === id ? updated : e)
+        setTccEntries(updatedEntries)
+
+        // Sincronizar con Supabase
+        await saveToSupabase('journal_tcc', 'journal_tcc', updated, updatedEntries)
     }
 
     const filteredTcc = tccEntries.filter(e =>

@@ -646,6 +646,9 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
         const isEditing = !!transferData.id
 
+        // Declarar fuera del if para que esté disponible en el scope de toda la función
+        let revertedAccounts = [...accounts]
+
         if (isEditing) {
             // MODO EDICIÓN: Eliminar transferencia anterior y crear nueva
             const oldTx1 = transactions.find(t => t.id === transferData.id)
@@ -657,7 +660,6 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             }
 
             // Revertir ambas transacciones de la transferencia anterior
-            let revertedAccounts = [...accounts]
 
             // Revertir tx1
             revertedAccounts = revertedAccounts.map(acc => {
@@ -668,7 +670,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = oldTx1.type === 'income' ? acc.balance - oldTx1.amount : acc.balance + oldTx1.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
@@ -682,7 +684,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     } else {
                         newBalance = oldTx2.type === 'income' ? acc.balance - oldTx2.amount : acc.balance + oldTx2.amount
                     }
-                    return { ...acc, balance: newBalance }
+                    return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })

@@ -100,7 +100,7 @@ function App() {
                 initializeData('journal_tcc', 'journal_tcc'),
                 initializeData('journal_health_log', 'journal_health_log'),
                 initializeData('journal_med_list', 'journal_med_list'),
-                initializeData('investments', 'investments'),
+                initializeData('investments', 'finanzas_investments'),
                 initializeData('import_logs', 'finanzas_import_logs')
             ])
 
