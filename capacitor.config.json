@@ -1,6 +1,6 @@
 {
-  "appId": "com.finanzaspro.app",
-  "appName": "FinanzasPro",
+  "appId": "com.negociosgarcia.app",
+  "appName": "NegociosGarcia",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

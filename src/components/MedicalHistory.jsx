@@ -16,6 +16,8 @@ import { initializeData, saveToSupabase, deleteFromSupabase } from '../lib/supab
 const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
     const [activeTab, setActiveTab] = useState('records')
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [expandedRecords, setExpandedRecords] = useState({})
+    const toggleRecord = (id) => setExpandedRecords(prev => ({ ...prev, [id]: !prev[id] }))
     const [isPatientModalOpen, setIsPatientModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [isRecording, setIsRecording] = useState(false)
@@ -28,7 +30,7 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
         date: format(new Date(), 'yyyy-MM-dd'),
         personName: '',
         reason: '',
-        medicationsList: [], // Cambio para coincidir con la columna 'medications_list' en DB
+        medicationsList: [],
         hasFollowUp: false,
         followUpDate: '',
         doctorName: '',
@@ -36,7 +38,13 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
         height: '',
         weight: '',
         recipeImage: '',
-        audioNote: ''
+        audioNote: '',
+        consultaNetworkType: 'red',
+        consultaPagado: '',
+        consultaReembolso: '',
+        medNetworkType: 'red',
+        medPagado: '',
+        medReembolso: ''
     })
 
     const [newPatient, setNewPatient] = useState({ name: '', age: '', bloodType: '', allergies: '', notes: '' })
@@ -184,7 +192,9 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
         setNewRecord({
             date: format(new Date(), 'yyyy-MM-dd'), personName: '', reason: '', medicationsList: [],
             hasFollowUp: false, followUpDate: '', doctorName: '', doctorComments: '',
-            height: '', weight: '', recipeImage: '', audioNote: ''
+            height: '', weight: '', recipeImage: '', audioNote: '',
+            consultaNetworkType: 'red', consultaPagado: '', consultaReembolso: '',
+            medNetworkType: 'red', medPagado: '', medReembolso: ''
         })
     }
 
@@ -223,6 +233,13 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
             (r.personName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
             (r.reason?.toLowerCase() || '').includes(searchQuery.toLowerCase())
         )
+        .sort((a, b) => {
+            try {
+                return parseISO(b.date) - parseISO(a.date)
+            } catch (e) {
+                return 0
+            }
+        })
 
     const nextAppointment = (records || [])
         .filter(r => r && r.hasFollowUp && r.followUpDate)
@@ -294,7 +311,7 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                     </div>
 
                     {/* Records List */}
-                    <div className="space-y-6">
+                    <div className="space-y-2">
                         {filteredRecords.length === 0 ? (
                             <div className="card py-20 text-center border-dashed border-2">
                                 <Clipboard className="mx-auto text-slate-300 mb-4" size={48} />
@@ -302,230 +319,106 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                             </div>
                         ) : (
                             filteredRecords.map((r) => (
-                                <div key={r.id} className="card bg-white border-slate-100 shadow-sm hover:shadow-md transition-all group overflow-hidden">
-                                    <div className="bg-slate-50/50 px-6 py-3 border-b border-slate-100 flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <time className="text-xs font-bold text-blue-600 uppercase tracking-widest">
-                                                {r.date ? format(parseISO(r.date), 'dd MMMM, yyyy', { locale: es }) : 'Sin fecha'}
-                                            </time>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <button
-                                                className="p-1.5 text-slate-300 hover:text-blue-500 transition-all shadow-sm bg-white border border-slate-100 rounded-lg"
-                                                title="Editar Consulta"
-                                                onClick={() => {
-                                                    // Sanitizar los datos: buscar en todos los nombres de campo posibles
-                                                    const rawMeds = r.medicationsList || r.medications || r.medications_list || [];
-                                                    const sanitizedRecord = {
-                                                        ...r,
-                                                        medicationsList: Array.isArray(rawMeds) ? rawMeds : []
-                                                    };
-                                                    setNewRecord(sanitizedRecord);
-                                                    setIsModalOpen(true);
-                                                }}
-                                            >
-                                                <Pencil size={16} />
-                                            </button>
-                                            <button onClick={() => deleteRecord(r.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-all shadow-sm bg-white border border-slate-100 rounded-lg" title="Eliminar Consulta">
-                                                <Trash2 size={16} />
-                                            </button>
+                                <div key={r.id} className="bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
+                                    {/* Fila resumen */}
+                                    <div className="flex items-center gap-2 px-4 py-3">
+                                        <button type="button" onClick={() => toggleRecord(r.id)} className="flex-1 flex items-center gap-3 text-left min-w-0">
+                                            <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-black text-sm uppercase shrink-0">
+                                                {r.personName?.charAt(0) || <User size={16} />}
+                                            </div>
+                                            <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                                                <time className="text-[10px] font-bold text-blue-500 uppercase tracking-widest shrink-0">{r.date ? format(parseISO(r.date), 'dd/MM/yyyy') : '—'}</time>
+                                                <span className="text-slate-200">|</span>
+                                                <span className="font-black text-slate-800 text-sm uppercase tracking-tight truncate">{r.personName || 'Sin nombre'}</span>
+                                                <span className="text-slate-300 hidden sm:block">·</span>
+                                                <span className="text-xs font-bold text-slate-500 truncate hidden sm:block">{r.reason || 'Consulta general'}</span>
+                                                {r.doctorName && <span className="text-[10px] text-slate-400 italic hidden md:block">· Dr. {r.doctorName}</span>}
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                                                {(() => { const meds = r.medications || r.medicationsList || []; return Array.isArray(meds) && meds.length > 0 && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[9px] font-black rounded-full border border-blue-100 uppercase hidden sm:block">{meds.length} med</span>; })()}
+                                                {r.hasFollowUp && <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[9px] font-black rounded-full border border-emerald-100 uppercase hidden md:block">Seguimiento</span>}
+                                                {r.consultaNetworkType === 'fuera' && <span className="px-2 py-0.5 bg-amber-50 text-amber-600 text-[9px] font-black rounded-full border border-amber-100 uppercase hidden md:block">Fuera Red</span>}
+                                                <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-transform duration-300 ${expandedRecords[r.id] ? 'rotate-180 bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                                </div>
+                                            </div>
+                                        </button>
+                                        <div className="flex items-center gap-1 shrink-0 border-l border-slate-100 pl-3">
+                                            <button className="p-1.5 text-slate-300 hover:text-blue-500 transition-all bg-white border border-slate-100 rounded-lg" title="Editar" onClick={() => { const rawMeds = r.medicationsList || r.medications || r.medications_list || []; setNewRecord({ ...r, medicationsList: Array.isArray(rawMeds) ? rawMeds : [], consultaNetworkType: r.consultaNetworkType || 'red', consultaPagado: r.consultaPagado || '', consultaReembolso: r.consultaReembolso || '', medNetworkType: r.medNetworkType || 'red', medPagado: r.medPagado || '', medReembolso: r.medReembolso || '' }); setIsModalOpen(true); }}><Pencil size={14} /></button>
+                                            <button onClick={() => deleteRecord(r.id)} className="p-1.5 text-slate-300 hover:text-rose-500 transition-all bg-white border border-slate-100 rounded-lg" title="Eliminar"><Trash2 size={14} /></button>
                                         </div>
                                     </div>
-                                    <div className="p-8">
-                                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                                            {/* Columna 1: Info Principal y Signos Vitales */}
-                                            <div className="lg:col-span-4 space-y-6">
-                                                <div className="space-y-1">
+                                    {/* Detalle expandible */}
+                                    {expandedRecords[r.id] && (
+                                        <div className="px-6 pb-8 pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 mt-4">
+                                                {/* Columna 1 */}
+                                                <div className="lg:col-span-4 space-y-5">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center font-black text-xl shadow-inner border border-blue-50">
-                                                            {r.personName?.charAt(0) || <User size={24} />}
-                                                        </div>
-                                                        <div>
-                                                            <h4 className="font-black text-slate-900 text-lg uppercase leading-tight tracking-tight">{r.personName || "Sin Nombre"}</h4>
-                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">{r.reason || "Consulta General"}</p>
-                                                        </div>
+                                                        <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center font-black text-xl shadow-inner">{r.personName?.charAt(0) || <User size={24} />}</div>
+                                                        <div><h4 className="font-black text-slate-900 text-lg uppercase leading-tight">{r.personName || 'Sin Nombre'}</h4><p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">{r.reason || 'Consulta General'}</p></div>
                                                     </div>
-                                                    {r.doctorName && (
-                                                        <div className="flex items-center gap-2 pl-2 text-slate-500">
-                                                            <Stethoscope size={14} className="text-blue-400" />
-                                                            <span className="text-[11px] font-bold italic">Dr. {r.doctorName}</span>
+                                                    {r.doctorName && <div className="flex items-center gap-2 pl-2 text-slate-500"><Stethoscope size={14} className="text-blue-400" /><span className="text-[11px] font-bold italic">Dr. {r.doctorName}</span></div>}
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {r.height && <div className="px-3 py-1.5 bg-slate-50 rounded-xl text-[10px] font-black border border-slate-100 flex items-center gap-1.5"><Ruler size={12} className="text-blue-500" />{r.height} CM</div>}
+                                                        {r.weight && <div className="px-3 py-1.5 bg-slate-50 rounded-xl text-[10px] font-black border border-slate-100 flex items-center gap-1.5"><Weight size={12} className="text-indigo-500" />{r.weight} KG</div>}
+                                                    </div>
+                                                    {/* Pago consulta */}
+                                                    {(r.consultaPagado || r.consultaNetworkType) && (
+                                                        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1">
+                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Pago Consulta</p>
+                                                            <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${r.consultaNetworkType === 'fuera' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{r.consultaNetworkType === 'fuera' ? 'Fuera de Red' : 'En Red'}</span>
+                                                            {r.consultaPagado && <p className="text-xs font-bold text-slate-700">Pagado: <span className="text-blue-600">${parseFloat(r.consultaPagado).toFixed(2)}</span></p>}
+                                                            {r.consultaNetworkType === 'fuera' && r.consultaReembolso && <p className="text-xs font-bold text-slate-700">Reembolso (10%): <span className="text-emerald-600">${parseFloat(r.consultaReembolso).toFixed(2)}</span></p>}
                                                         </div>
                                                     )}
-                                                </div>
-
-                                                <div className="flex flex-wrap gap-2 pt-2">
-                                                    {r.height && (
-                                                        <div className="px-4 py-2 bg-slate-50 rounded-2xl text-slate-600 text-[10px] font-black border border-slate-100 flex items-center gap-2 shadow-sm">
-                                                            <Ruler size={14} className="text-blue-500" /> {r.height} CM
+                                                    {/* Pago medicinas */}
+                                                    {(r.medPagado || r.medNetworkType) && (
+                                                        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 space-y-1">
+                                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Pago Medicinas</p>
+                                                            <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${r.medNetworkType === 'fuera' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{r.medNetworkType === 'fuera' ? 'Fuera de Red' : 'En Red'}</span>
+                                                            {r.medPagado && <p className="text-xs font-bold text-slate-700">Pagado: <span className="text-blue-600">${parseFloat(r.medPagado).toFixed(2)}</span></p>}
+                                                            {r.medNetworkType === 'fuera' && r.medReembolso && <p className="text-xs font-bold text-slate-700">Reembolso (10%): <span className="text-emerald-600">${parseFloat(r.medReembolso).toFixed(2)}</span></p>}
                                                         </div>
                                                     )}
-                                                    {r.weight && (
-                                                        <div className="px-4 py-2 bg-slate-50 rounded-2xl text-slate-600 text-[10px] font-black border border-slate-100 flex items-center gap-2 shadow-sm">
-                                                            <Weight size={14} className="text-indigo-500" /> {r.weight} KG
+                                                    {/* Plan Terapéutico */}
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center justify-between px-1"><h6 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-2"><Activity size={12} className="text-blue-500" />Plan Terapéutico</h6>{(() => { const m = r.medications || r.medicationsList || []; return Array.isArray(m) && m.length > 0 && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[9px] font-black rounded-full border border-blue-100 uppercase">{m.length} Items</span>; })()}</div>
+                                                        <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
+                                                            {(() => {
+                                                                let rawMeds = r.medications || r.medicationsList || []; let medsArray = [];
+                                                                try { if (Array.isArray(rawMeds)) medsArray = rawMeds; else if (typeof rawMeds === 'string' && rawMeds.trim()) { if (rawMeds.trim().startsWith('[') || rawMeds.trim().startsWith('{')) medsArray = JSON.parse(rawMeds); else medsArray = rawMeds.split(',').filter(m => m.trim()).map(m => m.trim()); } } catch (err) { medsArray = []; }
+                                                                if (!medsArray || medsArray.length === 0) return <div className="p-8 text-center"><Pill size={22} className="mx-auto text-slate-200 mb-2" /><p className="text-[10px] font-black text-slate-400 uppercase italic">Sin medicamentos</p></div>;
+                                                                return medsArray.map((m, i) => {
+                                                                    const isObj = m && typeof m === 'object'; const name = isObj ? m.name : m; const freq = isObj ? m.frequency : ''; const dose = isObj ? (m.dose || `${m.doseValue} ${m.doseUnit}`) : ''; const days = isObj ? m.days : '';
+                                                                    let endDateTooltip = null;
+                                                                    if (isObj && days && r.date) { try { const d = parseISO(r.date); const dur = parseInt(days); if (!isNaN(dur)) { const fin = new Date(d); fin.setDate(fin.getDate() + dur); endDateTooltip = format(fin, "d 'de' MMMM", { locale: es }); } } catch (e) { } }
+                                                                    return (<div key={i} className={`p-4 ${i !== 0 ? 'border-t border-slate-50' : ''} hover:bg-slate-50/50 transition-all group/item`}><div className="flex items-start justify-between gap-3"><div className="flex-1 min-w-0"><div className="flex items-center flex-wrap gap-2 mb-1"><div className="w-1.5 h-1.5 rounded-full bg-blue-500" /><span className="text-[11px] font-black text-slate-900 uppercase tracking-tight truncate">{name}</span>{endDateTooltip && <span className="px-2 py-0.5 bg-rose-50 text-rose-600 text-[8px] font-black rounded-lg border border-rose-100 uppercase flex items-center gap-1"><Clock size={8} />{endDateTooltip}</span>}</div><div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 uppercase"><span><span className="text-slate-300">D:</span> {dose || 'N/A'}</span><span><span className="text-slate-300">F:</span> {freq || 'A demanda'}</span></div></div><div className="shrink-0 w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover/item:bg-blue-50 group-hover/item:text-blue-500 transition-colors"><Pill size={14} /></div></div></div>);
+                                                                });
+                                                            })()}
                                                         </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Plan de Medicamentos - Rediseño más compacto */}
-                                                <div className="space-y-3 pt-4">
-                                                    <div className="flex items-center justify-between px-2">
-                                                        <h6 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] flex items-center gap-2">
-                                                            <Activity size={12} className="text-blue-500" /> Plan Terapéutico
-                                                        </h6>
-                                                        {(() => {
-                                                            const rawMeds = r.medications || r.medicationsList || [];
-                                                            return Array.isArray(rawMeds) && rawMeds.length > 0 && (
-                                                                <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-[9px] font-black rounded-full border border-blue-100 uppercase tracking-tighter">
-                                                                    {rawMeds.length} Items
-                                                                </span>
-                                                            )
-                                                        })()}
-                                                    </div>
-
-                                                    <div className="bg-white rounded-[2rem] border border-slate-100 overflow-hidden shadow-sm">
-                                                        {(() => {
-                                                            let rawMeds = r.medications || r.medicationsList || [];
-                                                            let medsArray = [];
-                                                            try {
-                                                                if (Array.isArray(rawMeds)) medsArray = rawMeds;
-                                                                else if (typeof rawMeds === 'string' && rawMeds.trim()) {
-                                                                    if (rawMeds.trim().startsWith('[') || rawMeds.trim().startsWith('{')) medsArray = JSON.parse(rawMeds);
-                                                                    else medsArray = rawMeds.split(',').filter(m => m.trim()).map(m => m.trim());
-                                                                }
-                                                            } catch (err) { medsArray = []; }
-
-                                                            if (!medsArray || medsArray.length === 0) {
-                                                                return (
-                                                                    <div className="p-10 bg-slate-50/30 text-center">
-                                                                        <Pill size={24} className="mx-auto text-slate-200 mb-2" />
-                                                                        <p className="text-[10px] font-black text-slate-400 uppercase italic tracking-widest">Sin medicamentos asignados</p>
-                                                                    </div>
-                                                                );
-                                                            }
-
-                                                            return medsArray.map((m, i) => {
-                                                                const isObj = m && typeof m === 'object';
-                                                                const name = isObj ? m.name : m;
-                                                                const freq = isObj ? m.frequency : '';
-                                                                const dose = isObj ? (m.dose || `${m.doseValue} ${m.doseUnit}`) : '';
-                                                                const days = isObj ? m.days : '';
-
-                                                                let endDateTooltip = null;
-                                                                if (isObj && days && r.date) {
-                                                                    try {
-                                                                        const consultDate = parseISO(r.date);
-                                                                        const duration = parseInt(days);
-                                                                        if (!isNaN(duration)) {
-                                                                            const fin = new Date(consultDate);
-                                                                            fin.setDate(fin.getDate() + duration);
-                                                                            endDateTooltip = format(fin, "d 'de' MMMM", { locale: es });
-                                                                        }
-                                                                    } catch (e) { }
-                                                                }
-
-                                                                return (
-                                                                    <div key={i} className={`p-4 ${i !== 0 ? 'border-t border-slate-50' : ''} hover:bg-slate-50/50 transition-all group/item`}>
-                                                                        <div className="flex items-start justify-between gap-3">
-                                                                            <div className="flex-1 min-w-0">
-                                                                                <div className="flex items-center flex-wrap gap-2 mb-1">
-                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm shadow-blue-200" />
-                                                                                    <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight truncate">{name}</span>
-                                                                                    {endDateTooltip && (
-                                                                                        <span className="px-2 py-0.5 bg-rose-50 text-rose-600 text-[8px] font-black rounded-lg border border-rose-100 uppercase flex items-center gap-1">
-                                                                                            <Clock size={8} /> {endDateTooltip}
-                                                                                        </span>
-                                                                                    )}
-                                                                                </div>
-                                                                                <div className="flex items-center gap-4 text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                                                                                    <div className="flex items-center gap-1.5">
-                                                                                        <span className="text-slate-300">D:</span> {dose || "N/A"}
-                                                                                    </div>
-                                                                                    <div className="flex items-center gap-1.5">
-                                                                                        <span className="text-slate-300">F:</span> {freq || "A demanda"}
-                                                                                    </div>
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className="shrink-0 w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover/item:bg-blue-50 group-hover/item:text-blue-500 transition-colors">
-                                                                                <Pill size={14} />
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            });
-                                                        })()}
                                                     </div>
                                                 </div>
-                                            </div>
-
-                                            {/* Columna 2: Comentarios y Multimedia */}
-                                            <div className="lg:col-span-8 flex flex-col gap-6">
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                    {/* Comentarios */}
-                                                    <div className="bg-slate-50/30 rounded-[2.5rem] p-6 border border-slate-100/50 flex flex-col min-h-[160px]">
-                                                        <div className="flex items-center gap-2 mb-4">
-                                                            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl"><MessageSquare size={16} /></div>
-                                                            <h6 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Observaciones</h6>
-                                                        </div>
-                                                        <p className="text-sm text-slate-600 leading-relaxed font-medium flex-1 italic">
-                                                            {r.doctorComments ? `"${r.doctorComments}"` : "Sin observaciones adicionales registradas."}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Multimedia Preview */}
-                                                    <div className="bg-slate-50/30 rounded-[2.5rem] p-6 border border-slate-100/50 flex flex-col gap-4">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="p-2 bg-amber-100 text-amber-600 rounded-xl"><Camera size={16} /></div>
-                                                            <h6 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Evidencia Multimedia</h6>
-                                                        </div>
-                                                        <div className="flex gap-4 items-center">
-                                                            {r.recipeImage ? (
-                                                                <div className="relative group/pic w-24 h-24 rounded-2xl overflow-hidden shadow-md border-2 border-white ring-1 ring-slate-100 shrink-0">
-                                                                    <img src={r.recipeImage} className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform" onClick={() => window.open(r.recipeImage)} />
-                                                                    <div className="absolute inset-0 bg-blue-600/20 opacity-0 group-hover/pic:opacity-100 transition-opacity" />
-                                                                </div>
-                                                            ) : (
-                                                                <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 shrink-0">
-                                                                    <Camera size={20} />
-                                                                    <span className="text-[8px] font-black mt-1 uppercase">Sin Foto</span>
-                                                                </div>
-                                                            )}
-
-                                                            <div className="flex-1 space-y-3">
-                                                                {r.audioNote ? (
-                                                                    <div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-50">
-                                                                        <div className="flex items-center gap-2 mb-2">
-                                                                            <div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
-                                                                            <span className="text-[9px] font-black text-slate-500 uppercase">Nota de Voz</span>
-                                                                        </div>
-                                                                        <audio controls src={r.audioNote} className="h-6 w-full opacity-70 hover:opacity-100 transition-opacity" />
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="bg-slate-100/50 p-4 rounded-2xl border border-dashed border-slate-200 text-center">
-                                                                        <Mic size={16} className="mx-auto text-slate-300" />
-                                                                        <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Sin audio</p>
-                                                                    </div>
-                                                                )}
+                                                {/* Columna 2 */}
+                                                <div className="lg:col-span-8 flex flex-col gap-6">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                        <div className="bg-slate-50/30 rounded-[2.5rem] p-6 border border-slate-100/50 flex flex-col min-h-[160px]"><div className="flex items-center gap-2 mb-4"><div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl"><MessageSquare size={16} /></div><h6 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Observaciones</h6></div><p className="text-sm text-slate-600 leading-relaxed font-medium flex-1 italic">{r.doctorComments ? `"${r.doctorComments}"` : 'Sin observaciones adicionales registradas.'}</p></div>
+                                                        <div className="bg-slate-50/30 rounded-[2.5rem] p-6 border border-slate-100/50 flex flex-col gap-4">
+                                                            <div className="flex items-center gap-2"><div className="p-2 bg-amber-100 text-amber-600 rounded-xl"><Camera size={16} /></div><h6 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Evidencia Multimedia</h6></div>
+                                                            <div className="flex gap-4 items-center">
+                                                                {r.recipeImage ? (<div className="relative group/pic w-24 h-24 rounded-2xl overflow-hidden shadow-md border-2 border-white ring-1 ring-slate-100 shrink-0"><img src={r.recipeImage} className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform" onClick={() => window.open(r.recipeImage)} /><div className="absolute inset-0 bg-blue-600/20 opacity-0 group-hover/pic:opacity-100 transition-opacity" /></div>) : (<div className="w-24 h-24 rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 shrink-0"><Camera size={20} /><span className="text-[8px] font-black mt-1 uppercase">Sin Foto</span></div>)}
+                                                                <div className="flex-1 space-y-3">{r.audioNote ? (<div className="bg-white p-3 rounded-2xl shadow-sm border border-blue-50"><div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" /><span className="text-[9px] font-black text-slate-500 uppercase">Nota de Voz</span></div><audio controls src={r.audioNote} className="h-6 w-full opacity-70 hover:opacity-100 transition-opacity" /></div>) : (<div className="bg-slate-100/50 p-4 rounded-2xl border border-dashed border-slate-200 text-center"><Mic size={16} className="mx-auto text-slate-300" /><p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Sin audio</p></div>)}</div>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </div>
-
-                                                {/* Meta Info Footer inside Card */}
-                                                <div className="mt-auto pt-6 border-t border-slate-100 flex items-center justify-between opacity-50 grayscale hover:grayscale-0 transition-all">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase">
-                                                            <Calendar size={12} /> Creado el {format(parseISO(r.date), 'dd/MM/yyyy')}
-                                                        </div>
-                                                        {r.hasFollowUp && (
-                                                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 uppercase">
-                                                                <CalendarCheck size={12} /> Seguimiento: {format(parseISO(r.followUpDate), 'dd/MM/yyyy')}
-                                                            </div>
-                                                        )}
+                                                    <div className="mt-auto pt-6 border-t border-slate-100 flex items-center gap-4 opacity-50 hover:opacity-100 transition-all">
+                                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase"><Calendar size={12} />Creado el {format(parseISO(r.date), 'dd/MM/yyyy')}</div>
+                                                        {r.hasFollowUp && <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 uppercase"><CalendarCheck size={12} />Seguimiento: {format(parseISO(r.followUpDate), 'dd/MM/yyyy')}</div>}
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
                             ))
                         )}
@@ -625,6 +518,44 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
                                         <label className="text-[10px] font-black text-slate-400 uppercase pl-2 mb-2 block flex items-center gap-1.5"><Calendar size={12} className="text-blue-500" /> Fecha</label>
                                         <input type="date" required className="input-field !py-4 font-bold !bg-white !shadow-sm cursor-pointer" value={newRecord.date} onChange={e => setNewRecord({ ...newRecord, date: e.target.value })} />
                                     </div>
+                                    {/* Tipo de Consulta */}
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase pl-2 mb-2 block flex items-center gap-1.5"><Stethoscope size={12} className="text-blue-500" /> Tipo de Consulta</label>
+                                        <div className="flex gap-2">
+                                            {[{ v: 'red', l: '🏥 En Red' }, { v: 'fuera', l: '🌐 Fuera de Red' }].map(opt => (
+                                                <button key={opt.v} type="button" onClick={() => setNewRecord(prev => ({ ...prev, consultaNetworkType: opt.v, consultaReembolso: opt.v === 'fuera' && prev.consultaPagado ? (parseFloat(prev.consultaPagado) * 0.10).toFixed(2) : '' }))} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${newRecord.consultaNetworkType === opt.v ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{opt.l}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase pl-2 mb-2 block">Monto Pagado Consulta ($)</label>
+                                        <input type="number" step="0.01" placeholder="0.00" className="input-field !py-3 font-bold !bg-white !shadow-sm" value={newRecord.consultaPagado} onChange={e => { const v = e.target.value; setNewRecord(prev => ({ ...prev, consultaPagado: v, consultaReembolso: prev.consultaNetworkType === 'fuera' && v ? (parseFloat(v) * 0.10).toFixed(2) : '' })); }} />
+                                    </div>
+                                    {newRecord.consultaNetworkType === 'fuera' && (
+                                        <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                                            <label className="text-[10px] font-black text-emerald-600 uppercase block mb-1">Reembolso Consulta (10%)</label>
+                                            <p className="font-black text-emerald-700 text-lg">${newRecord.consultaReembolso || '0.00'}</p>
+                                        </div>
+                                    )}
+                                    {/* Tipo Pago Medicinas */}
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase pl-2 mb-2 block flex items-center gap-1.5"><Pill size={12} className="text-blue-500" /> Tipo Pago Medicinas</label>
+                                        <div className="flex gap-2">
+                                            {[{ v: 'red', l: '🏥 En Red' }, { v: 'fuera', l: '🌐 Fuera de Red' }].map(opt => (
+                                                <button key={opt.v} type="button" onClick={() => setNewRecord(prev => ({ ...prev, medNetworkType: opt.v, medReembolso: opt.v === 'fuera' && prev.medPagado ? (parseFloat(prev.medPagado) * 0.10).toFixed(2) : '' }))} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase border transition-all ${newRecord.medNetworkType === opt.v ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{opt.l}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase pl-2 mb-2 block">Monto Pagado Medicinas ($)</label>
+                                        <input type="number" step="0.01" placeholder="0.00" className="input-field !py-3 font-bold !bg-white !shadow-sm" value={newRecord.medPagado} onChange={e => { const v = e.target.value; setNewRecord(prev => ({ ...prev, medPagado: v, medReembolso: prev.medNetworkType === 'fuera' && v ? (parseFloat(v) * 0.10).toFixed(2) : '' })); }} />
+                                    </div>
+                                    {newRecord.medNetworkType === 'fuera' && (
+                                        <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                                            <label className="text-[10px] font-black text-emerald-600 uppercase block mb-1">Reembolso Medicinas (10%)</label>
+                                            <p className="font-black text-emerald-700 text-lg">${newRecord.medReembolso || '0.00'}</p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Section 2: Medical Details */}

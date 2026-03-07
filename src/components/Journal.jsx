@@ -118,8 +118,8 @@ const Journal = ({ tccEntries, setTccEntries, logEntries, setLogEntries, medicat
     }
 
     const simulateAIResponse = async (thought, situation, emotions) => {
-        // API Key hardcodeada para conexión automática
-        const GEMINI_API_KEY = 'AIzaSyBHeE525Uh0Crk31DahsNd-Vtd4MHp7nSI'
+        // Cargar API Key desde variables de entorno
+        const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
 
         setIsThinking(true)
 

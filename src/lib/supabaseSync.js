@@ -114,7 +114,7 @@ const convertObjectToSnakeCase = (obj) => {
         }
 
         // 2. Strings vacíos en campos numéricos -> null
-        if (value === '' && (snakeKey.includes('installments') || snakeKey.includes('rate') || snakeKey.includes('amount') || snakeKey.includes('age') || snakeKey.includes('height') || snakeKey.includes('weight') || snakeKey.includes('anxiety') || snakeKey.includes('insomnia') || snakeKey.includes('mileage'))) {
+        if (value === '' && (snakeKey.includes('installments') || snakeKey.includes('rate') || snakeKey.includes('amount') || snakeKey.includes('age') || snakeKey.includes('height') || snakeKey.includes('weight') || snakeKey.includes('anxiety') || snakeKey.includes('insomnia') || snakeKey.includes('mileage') || snakeKey.includes('pagado') || snakeKey.includes('reembolso'))) {
             value = null
         }
 
