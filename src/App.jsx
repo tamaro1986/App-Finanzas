@@ -30,7 +30,7 @@ const CategoryCharts = lazy(() => import('./components/CategoryCharts'))
 function App() {
     const [activeView, setActiveView] = useState('dashboard')
     const [selectedAccountId, setSelectedAccountId] = useState(null)
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true)
+    const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1024)
     // Estado de autenticación
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -48,11 +48,17 @@ function App() {
     const [investments, setInvestments] = useState([])
     const [importLogs, setImportLogs] = useState([])
 
-    // ESTADO MÓDULO DE NEGOCIOS
+    // ESTADO MÓDULO DE NEGOCIOS (ERP)
     const [bizProducts, setBizProducts] = useState([])
     const [bizContacts, setBizContacts] = useState([])
-    const [bizTransactions, setBizTransactions] = useState([])
-    const [bizTransactionItems, setBizTransactionItems] = useState([])
+    // ERP Extendido
+    const [bizSuppliers, setBizSuppliers] = useState([])
+    const [bizPurchases, setBizPurchases] = useState([])
+    const [bizPurchaseItems, setBizPurchaseItems] = useState([])
+    const [bizRecipes, setBizRecipes] = useState([])
+    const [bizRecipeItems, setBizRecipeItems] = useState([])
+    const [bizProductionOrders, setBizProductionOrders] = useState([])
+    const [bizMovements, setBizMovements] = useState([])
 
     // ============================================================================
     // EFFECT: Verificar sesión y cargar datos al iniciar
@@ -91,6 +97,13 @@ function App() {
                 setBizContacts([])
                 setBizTransactions([])
                 setBizTransactionItems([])
+                setBizSuppliers([])
+                setBizPurchases([])
+                setBizPurchaseItems([])
+                setBizRecipes([])
+                setBizRecipeItems([])
+                setBizProductionOrders([])
+                setBizMovements([])
             }
         })
 
@@ -101,23 +114,29 @@ function App() {
         try {
             const { initializeData } = await import('./lib/supabaseSync')
 
-            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData, bizProdData, bizContData, bizTxData, bizItemsData] = await Promise.all([
-                initializeData('transactions', 'finanzas_transactions'),
-                initializeData('accounts', 'finanzas_accounts'),
-                initializeData('budgets', 'finanzas_budgets'),
-                initializeData('vehicles', 'finanzas_vehicles'),
-                initializeData('medical_records', 'finanzas_medical_records'),
-                initializeData('patients', 'finanzas_patients'),
-                initializeData('journal_tcc', 'journal_tcc'),
-                initializeData('journal_health_log', 'journal_health_log'),
-                initializeData('journal_med_list', 'journal_med_list'),
-                initializeData('investments', 'finanzas_investments'),
-                initializeData('import_logs', 'finanzas_import_logs'),
-                initializeData('finanzas_business_products', 'finanzas_business_products'),
-                initializeData('finanzas_business_contacts', 'finanzas_business_contacts'),
-                initializeData('finanzas_business_transactions', 'finanzas_business_transactions'),
-                initializeData('finanzas_business_transaction_items', 'finanzas_business_transaction_items')
-            ])
+            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData, bizProdData,
+                bizSuppliersData, bizPurchasesData, bizPurchaseItemsData, bizRecipesData, bizRecipeItemsData, bizProdOrdersData, bizMovData] = await Promise.all([
+                    initializeData('transactions', 'finanzas_transactions'),
+                    initializeData('accounts', 'finanzas_accounts'),
+                    initializeData('budgets', 'finanzas_budgets'),
+                    initializeData('vehicles', 'finanzas_vehicles'),
+                    initializeData('medical_records', 'finanzas_medical_records'),
+                    initializeData('patients', 'finanzas_patients'),
+                    initializeData('journal_tcc', 'journal_tcc'),
+                    initializeData('journal_health_log', 'journal_health_log'),
+                    initializeData('journal_med_list', 'journal_med_list'),
+                    initializeData('investments', 'finanzas_investments'),
+                    initializeData('import_logs', 'finanzas_import_logs'),
+                    initializeData('finanzas_business_products', 'finanzas_biz_products'),
+                    // ERP Unified tables
+                    initializeData('finanzas_biz_suppliers', 'finanzas_biz_suppliers_local'),
+                    initializeData('finanzas_biz_purchases', 'finanzas_biz_purchases_local'),
+                    initializeData('finanzas_biz_purchase_items', 'finanzas_biz_purchase_items_local'),
+                    initializeData('finanzas_biz_recipes', 'finanzas_biz_recipes_local'),
+                    initializeData('finanzas_biz_recipe_items', 'finanzas_biz_recipe_items_local'),
+                    initializeData('finanzas_biz_production_orders', 'finanzas_biz_prod_orders_local'),
+                    initializeData('finanzas_biz_inventory_movements', 'finanzas_biz_movements_local'),
+                ])
 
             setTransactions(txData || [])
             setAccounts(accData || [])
@@ -143,9 +162,14 @@ function App() {
             setInvestments(invData || [])
             setImportLogs(importLogData || [])
             setBizProducts(bizProdData || [])
-            setBizContacts(bizContData || [])
-            setBizTransactions(bizTxData || [])
-            setBizTransactionItems(bizItemsData || [])
+            setBizContacts(bizSuppliersData || []) // Load contacts from unified suppliers table
+            setBizSuppliers(bizSuppliersData || [])
+            setBizPurchases(bizPurchasesData || [])
+            setBizPurchaseItems(bizPurchaseItemsData || [])
+            setBizRecipes(bizRecipesData || [])
+            setBizRecipeItems(bizRecipeItemsData || [])
+            setBizProductionOrders(bizProdOrdersData || [])
+            setBizMovements(bizMovData || [])
 
             // Manejar lista de medicamentos
             if (medListData && Array.isArray(medListData) && medListData.length > 0) {
@@ -174,8 +198,22 @@ function App() {
     const handleLogout = async () => {
         if (!supabase) return
         if (confirm('¿Cerrar sesión?')) {
+            // Limpiar localStorage antes de salir para evitar fuga de datos entre usuarios
+            const appKeys = [
+                'finanzas_transactions', 'finanzas_accounts', 'finanzas_budgets',
+                'finanzas_vehicles', 'finanzas_medical_records', 'finanzas_patients',
+                'journal_tcc', 'journal_health_log', 'journal_med_list',
+                'finanzas_investments', 'finanzas_import_logs', 'finanzas_biz_products',
+                'finanzas_biz_suppliers_local', 'finanzas_biz_purchases_local',
+                'finanzas_biz_purchase_items_local', 'finanzas_biz_recipes_local',
+                'finanzas_biz_recipe_items_local', 'finanzas_biz_prod_orders_local',
+                'finanzas_biz_movements_local', 'finanzas_biz_contacts'
+            ];
+            appKeys.forEach(key => localStorage.removeItem(key));
+
             await supabase.auth.signOut()
             setUser(null)
+            window.location.reload() // Recargar para asegurar estado limpio
         }
     }
 
@@ -245,14 +283,30 @@ function App() {
             case 'business':
                 return (
                     <BusinessModule
+                        // Main Finance State
+                        transactions={transactions}
+                        setTransactions={setTransactions}
+                        accounts={accounts}
+                        setAccounts={setAccounts}
+                        // ERP state
                         products={bizProducts}
                         setProducts={setBizProducts}
                         contacts={bizContacts}
                         setContacts={setBizContacts}
-                        transactions={bizTransactions}
-                        setTransactions={setBizTransactions}
-                        transactionItems={bizTransactionItems}
-                        setTransactionItems={setBizTransactionItems}
+                        bizSuppliers={bizSuppliers}
+                        setBizSuppliers={setBizSuppliers}
+                        bizPurchases={bizPurchases}
+                        setBizPurchases={setBizPurchases}
+                        bizPurchaseItems={bizPurchaseItems}
+                        setBizPurchaseItems={setBizPurchaseItems}
+                        bizRecipes={bizRecipes}
+                        setBizRecipes={setBizRecipes}
+                        bizRecipeItems={bizRecipeItems}
+                        setBizRecipeItems={setBizRecipeItems}
+                        bizProductionOrders={bizProductionOrders}
+                        setBizProductionOrders={setBizProductionOrders}
+                        bizMovements={bizMovements}
+                        setBizMovements={setBizMovements}
                     />
                 )
             case 'settings':
@@ -295,7 +349,7 @@ function App() {
                     <SyncStatusIndicator />
                 </div>
                 {/* Mobile Header */}
-                <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-emerald-200/60 flex items-center justify-between px-6 z-50">
+                <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-emerald-200/60 flex items-center justify-between px-6 z-50 transition-all duration-300" style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(4rem + env(safe-area-inset-top))' }}>
                     <span className="text-lg font-bold text-[#1e3a5f]" style={{ fontFamily: 'Georgia, serif' }}>
                         NegociosGarcia
                     </span>
@@ -327,8 +381,8 @@ function App() {
 
                 {/* Sidebar */}
                 <aside className={`
-                fixed lg:relative inset-y-0 left-0 bg-white border-r border-slate-200/60 z-40 transition-all duration-300 ease-in-out
-                ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 overflow-hidden'}
+                fixed lg:relative inset-y-0 left-0 bg-[#0f142b] border-r border-[#1b2245] z-50 transition-all duration-300 ease-in-out
+                ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:w-20 lg:translate-x-0 overflow-hidden'}
             `}>
                     <Sidebar
                         activeView={activeView}
@@ -357,8 +411,8 @@ function App() {
                 )}
 
                 {/* Main Content Area */}
-                <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">
-                    <div className="max-w-7xl mx-auto p-6 md:p-10">
+                <main className="flex-1 overflow-y-auto pt-16 lg:pt-0 bg-[#f9fafb]">
+                    <div className="max-w-7xl mx-auto p-4 md:p-8">
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
                             <Suspense fallback={<div className="flex items-center justify-center h-64"><Loader className="animate-spin text-emerald-600" size={48} /></div>}>
                                 {renderView()}

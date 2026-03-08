@@ -446,6 +446,29 @@ export const initializeData = async (tableName, localStorageKey) => {
     // Si supabase no está configurado, retornar local de inmediato
     if (!supabase) return localData
 
+    // 1.5 Detección de cambio de usuario para evitar fuga de datos
+    const userId = await getUserId()
+    if (userId) {
+        const lastUserId = localStorage.getItem('finanzas_last_user_id')
+        if (lastUserId && lastUserId !== userId) {
+            console.warn('[SupabaseSync] ¡Detectado cambio de usuario! Limpiando caché local para seguridad.')
+            // No borramos todo, solo los datos de la app para evitar migrar datos de User A a User B
+            const keysToClear = [
+                'finanzas_transactions', 'finanzas_accounts', 'finanzas_budgets',
+                'finanzas_vehicles', 'finanzas_medical_records', 'finanzas_patients',
+                'journal_tcc', 'journal_health_log', 'journal_med_list',
+                'finanzas_investments', 'finanzas_import_logs', 'finanzas_biz_products',
+                'finanzas_biz_suppliers_local', 'finanzas_biz_purchases_local',
+                'finanzas_biz_purchase_items_local', 'finanzas_biz_recipes_local',
+                'finanzas_biz_recipe_items_local', 'finanzas_biz_prod_orders_local',
+                'finanzas_biz_movements_local', 'finanzas_biz_contacts'
+            ]
+            keysToClear.forEach(k => localStorage.removeItem(k))
+            localData = [] // Resetear localData para el flujo actual
+        }
+        localStorage.setItem('finanzas_last_user_id', userId)
+    }
+
     // 2. Intentar cargar datos de Supabase
     const remoteData = await fetchFromSupabase(tableName)
 
