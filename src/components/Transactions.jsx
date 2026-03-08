@@ -132,7 +132,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // ============================================================================
     const [isBatchMode, setIsBatchMode] = useState(false)
     const [batchRows, setBatchRows] = useState([
-        { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), accountId: accounts[0]?.id || '', categoryId: '', amount: '', type: 'expense', note: '' }
+        { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), accountId: accounts[0]?.id || '', toAccountId: '', categoryId: '', amount: '', type: 'expense', note: '' }
     ])
 
     const toggleCalculator = (field) => {
@@ -460,6 +460,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             id: crypto.randomUUID(),
             date: lastRow?.date || format(new Date(), 'yyyy-MM-dd'),
             accountId: lastRow?.accountId || accounts[0]?.id || '',
+            toAccountId: '',
             categoryId: lastRow?.categoryId || '',
             amount: '',
             type: lastRow?.type || 'expense',
@@ -480,9 +481,13 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const handleBatchSave = async (e) => {
         if (e && e.preventDefault) e.preventDefault()
 
-        const validRows = batchRows.filter(r => r.amount && r.accountId && r.categoryId)
+        const validRows = batchRows.filter(r =>
+            r.amount &&
+            r.accountId &&
+            (r.type === 'transfer' ? r.toAccountId : r.categoryId)
+        )
         if (validRows.length === 0) {
-            alert('Por favor completa al menos una fila con monto, cuenta y categoría.')
+            alert('Por favor completa al menos una fila con monto, cuenta y categoría/destino.')
             return
         }
 
@@ -493,30 +498,91 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
         for (const row of validRows) {
             const amount = round2(row.amount)
-            const tx = { ...row, id: row.id || crypto.randomUUID(), amount }
 
-            // 1. Agregar a la lista local
-            currentTxList = [tx, ...currentTxList]
+            if (row.type === 'transfer') {
+                // Lógica de transferencia similar a handleAddTransfer
+                const fromAccount = currentAccList.find(a => a.id === row.accountId)
+                const toAccount = currentAccList.find(a => a.id === row.toAccountId)
 
-            // 2. Actualizar balance local en la lista de cuentas
-            currentAccList = currentAccList.map(acc => {
-                if (acc.id === tx.accountId) {
-                    let newBalance = acc.balance
-                    if (acc.type === 'Préstamo') {
-                        newBalance = tx.type === 'income' ? acc.balance - amount : acc.balance + amount
-                    } else {
-                        newBalance = tx.type === 'income' ? acc.balance + amount : acc.balance - amount
-                    }
-                    return { ...acc, balance: round2(newBalance) }
+                if (!fromAccount || !toAccount) continue
+
+                const transferId = crypto.randomUUID()
+
+                const tx1 = {
+                    id: crypto.randomUUID(),
+                    transferId,
+                    isTransfer: true,
+                    type: 'expense',
+                    accountId: row.accountId,
+                    categoryId: 'transfer',
+                    amount,
+                    date: row.date,
+                    note: `Transferencia a ${toAccount.name}${row.note ? ': ' + row.note : ''}`,
+                    attachment: null
                 }
-                return acc
-            })
 
-            // 3. Sincronizar individualmente como lo hace processTransaction
-            await saveToSupabase('transactions', 'finanzas_transactions', tx, currentTxList)
-            const updatedAccount = currentAccList.find(a => a.id === tx.accountId)
-            if (updatedAccount) {
-                await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, currentAccList)
+                const tx2 = {
+                    id: crypto.randomUUID(),
+                    transferId,
+                    isTransfer: true,
+                    type: 'income',
+                    accountId: row.toAccountId,
+                    categoryId: 'transfer',
+                    amount,
+                    date: row.date,
+                    note: `Transferencia desde ${fromAccount.name}${row.note ? ': ' + row.note : ''}`,
+                    attachment: null
+                }
+
+                currentTxList = [tx1, tx2, ...currentTxList]
+
+                // Actualizar balances locales
+                currentAccList = currentAccList.map(acc => {
+                    if (acc.id === tx1.accountId) {
+                        let newBalance = acc.type === 'Préstamo' ? acc.balance + amount : acc.balance - amount
+                        return { ...acc, balance: round2(newBalance) }
+                    }
+                    if (acc.id === tx2.accountId) {
+                        let newBalance = acc.type === 'Préstamo' ? acc.balance - amount : acc.balance + amount
+                        return { ...acc, balance: round2(newBalance) }
+                    }
+                    return acc
+                })
+
+                // Sincronizar
+                await saveToSupabase('transactions', 'finanzas_transactions', tx1, currentTxList)
+                await saveToSupabase('transactions', 'finanzas_transactions', tx2, currentTxList)
+                const updatedAcc1 = currentAccList.find(a => a.id === tx1.accountId)
+                const updatedAcc2 = currentAccList.find(a => a.id === tx2.accountId)
+                if (updatedAcc1) await saveToSupabase('accounts', 'finanzas_accounts', updatedAcc1, currentAccList)
+                if (updatedAcc2) await saveToSupabase('accounts', 'finanzas_accounts', updatedAcc2, currentAccList)
+
+            } else {
+                const tx = { ...row, id: row.id || crypto.randomUUID(), amount }
+
+                // 1. Agregar a la lista local
+                currentTxList = [tx, ...currentTxList]
+
+                // 2. Actualizar balance local en la lista de cuentas
+                currentAccList = currentAccList.map(acc => {
+                    if (acc.id === tx.accountId) {
+                        let newBalance = acc.balance
+                        if (acc.type === 'Préstamo') {
+                            newBalance = tx.type === 'income' ? acc.balance - amount : acc.balance + amount
+                        } else {
+                            newBalance = tx.type === 'income' ? acc.balance + amount : acc.balance - amount
+                        }
+                        return { ...acc, balance: round2(newBalance) }
+                    }
+                    return acc
+                })
+
+                // 3. Sincronizar individualmente as it does processTransaction
+                await saveToSupabase('transactions', 'finanzas_transactions', tx, currentTxList)
+                const updatedAccount = currentAccList.find(a => a.id === tx.accountId)
+                if (updatedAccount) {
+                    await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, currentAccList)
+                }
             }
         }
 
@@ -533,6 +599,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             id: crypto.randomUUID(),
             date: format(new Date(), 'yyyy-MM-dd'),
             accountId: accounts[0]?.id || '',
+            toAccountId: '',
             categoryId: '',
             amount: '',
             type: 'expense',
@@ -2711,7 +2778,7 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                 <th className="px-4 py-3 min-w-[120px]">Fecha</th>
                                                 <th className="px-4 py-3 min-w-[100px]">Tipo</th>
                                                 <th className="px-4 py-3 min-w-[180px]">Cuenta</th>
-                                                <th className="px-4 py-3 min-w-[180px]">Categoría</th>
+                                                <th className="px-4 py-3 min-w-[180px]">Categoría / Destino</th>
                                                 <th className="px-4 py-3 min-w-[120px]">Monto ($)</th>
                                                 <th className="px-4 py-3 min-w-[200px]">Nota</th>
                                                 <th className="px-4 py-3 w-10"></th>
@@ -2732,10 +2799,11 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                         <select
                                                             value={row.type}
                                                             onChange={(e) => updateBatchRow(row.id, 'type', e.target.value)}
-                                                            className={`w-full bg-transparent border-none text-[10px] font-black uppercase tracking-tight focus:ring-0 px-2 py-1 rounded-lg ${row.type === 'income' ? 'text-emerald-600 bg-emerald-50/50' : 'text-rose-600 bg-rose-50/50'}`}
+                                                            className={`w-full bg-transparent border-none text-[10px] font-black uppercase tracking-tight focus:ring-0 px-2 py-1 rounded-lg ${row.type === 'income' ? 'text-emerald-600 bg-emerald-50/50' : row.type === 'transfer' ? 'text-blue-600 bg-blue-50/50' : 'text-rose-600 bg-rose-50/50'}`}
                                                         >
                                                             <option value="expense">Gasto</option>
                                                             <option value="income">Ingreso</option>
+                                                            <option value="transfer">Transferencia</option>
                                                         </select>
                                                     </td>
                                                     <td className="px-2 py-2">
@@ -2744,21 +2812,32 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                             onChange={(e) => updateBatchRow(row.id, 'accountId', e.target.value)}
                                                             className="w-full bg-transparent border-none text-xs focus:ring-0 p-2"
                                                         >
-                                                            <option value="">Selección...</option>
+                                                            <option value="">Cuenta...</option>
                                                             {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
                                                         </select>
                                                     </td>
                                                     <td className="px-2 py-2">
-                                                        <select
-                                                            value={row.categoryId}
-                                                            onChange={(e) => updateBatchRow(row.id, 'categoryId', e.target.value)}
-                                                            className="w-full bg-transparent border-none text-xs focus:ring-0 p-2"
-                                                        >
-                                                            <option value="">Selección...</option>
-                                                            {getCombinedCategories(row.type).map(cat => (
-                                                                <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-                                                            ))}
-                                                        </select>
+                                                        {row.type === 'transfer' ? (
+                                                            <select
+                                                                value={row.toAccountId}
+                                                                onChange={(e) => updateBatchRow(row.id, 'toAccountId', e.target.value)}
+                                                                className="w-full bg-blue-50/50 border-none text-xs focus:ring-0 p-2 font-bold text-blue-700 rounded-lg"
+                                                            >
+                                                                <option value="">Destino...</option>
+                                                                {accounts.filter(a => a.id !== row.accountId).map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                                                            </select>
+                                                        ) : (
+                                                            <select
+                                                                value={row.categoryId}
+                                                                onChange={(e) => updateBatchRow(row.id, 'categoryId', e.target.value)}
+                                                                className="w-full bg-transparent border-none text-xs focus:ring-0 p-2"
+                                                            >
+                                                                <option value="">Categoría...</option>
+                                                                {getCombinedCategories(row.type).map(cat => (
+                                                                    <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                                                                ))}
+                                                            </select>
+                                                        )}
                                                     </td>
                                                     <td className="px-2 py-2">
                                                         <input
