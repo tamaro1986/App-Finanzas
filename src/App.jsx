@@ -13,6 +13,7 @@ import MedicalHistory from './components/MedicalHistory'
 import Journal from './components/Journal'
 import DebtModule from './components/DebtModule'
 import InvestmentPortfolio from './components/InvestmentPortfolio'
+import BusinessModule from './components/BusinessModule'
 import Auth from './components/Auth'
 import CategoryCharts from './components/CategoryCharts'
 import SyncStatusIndicator from './components/SyncStatusIndicator'
@@ -47,6 +48,12 @@ function App() {
     const [investments, setInvestments] = useState([])
     const [importLogs, setImportLogs] = useState([])
 
+    // ESTADO MÓDULO DE NEGOCIOS
+    const [bizProducts, setBizProducts] = useState([])
+    const [bizContacts, setBizContacts] = useState([])
+    const [bizTransactions, setBizTransactions] = useState([])
+    const [bizTransactionItems, setBizTransactionItems] = useState([])
+
     // ============================================================================
     // EFFECT: Verificar sesión y cargar datos al iniciar
     // ============================================================================
@@ -80,6 +87,10 @@ function App() {
                 setTccEntries([])
                 setLogEntries([])
                 setInvestments([])
+                setBizProducts([])
+                setBizContacts([])
+                setBizTransactions([])
+                setBizTransactionItems([])
             }
         })
 
@@ -90,7 +101,7 @@ function App() {
         try {
             const { initializeData } = await import('./lib/supabaseSync')
 
-            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData] = await Promise.all([
+            const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData, bizProdData, bizContData, bizTxData, bizItemsData] = await Promise.all([
                 initializeData('transactions', 'finanzas_transactions'),
                 initializeData('accounts', 'finanzas_accounts'),
                 initializeData('budgets', 'finanzas_budgets'),
@@ -101,7 +112,11 @@ function App() {
                 initializeData('journal_health_log', 'journal_health_log'),
                 initializeData('journal_med_list', 'journal_med_list'),
                 initializeData('investments', 'finanzas_investments'),
-                initializeData('import_logs', 'finanzas_import_logs')
+                initializeData('import_logs', 'finanzas_import_logs'),
+                initializeData('finanzas_business_products', 'finanzas_business_products'),
+                initializeData('finanzas_business_contacts', 'finanzas_business_contacts'),
+                initializeData('finanzas_business_transactions', 'finanzas_business_transactions'),
+                initializeData('finanzas_business_transaction_items', 'finanzas_business_transaction_items')
             ])
 
             setTransactions(txData || [])
@@ -127,6 +142,10 @@ function App() {
             setLogEntries(logData || [])
             setInvestments(invData || [])
             setImportLogs(importLogData || [])
+            setBizProducts(bizProdData || [])
+            setBizContacts(bizContData || [])
+            setBizTransactions(bizTxData || [])
+            setBizTransactionItems(bizItemsData || [])
 
             // Manejar lista de medicamentos
             if (medListData && Array.isArray(medListData) && medListData.length > 0) {
@@ -223,6 +242,19 @@ function App() {
                 return <DebtModule accounts={accounts} setAccounts={setAccounts} transactions={transactions} />
             case 'investments':
                 return <InvestmentPortfolio investments={investments} setInvestments={setInvestments} />
+            case 'business':
+                return (
+                    <BusinessModule
+                        products={bizProducts}
+                        setProducts={setBizProducts}
+                        contacts={bizContacts}
+                        setContacts={setBizContacts}
+                        transactions={bizTransactions}
+                        setTransactions={setBizTransactions}
+                        transactionItems={bizTransactionItems}
+                        setTransactionItems={setBizTransactionItems}
+                    />
+                )
             case 'settings':
                 return <Settings />
             default:
@@ -302,7 +334,10 @@ function App() {
                         activeView={activeView}
                         setActiveView={(view) => {
                             setActiveView(view)
-                            setIsSidebarOpen(false)
+                            // Solo ocultar si estamos en móvil (ancho menor a 1024px)
+                            if (window.innerWidth < 1024) {
+                                setIsSidebarOpen(false)
+                            }
                         }}
                         onLogout={handleLogout}
                         userEmail={user?.email}

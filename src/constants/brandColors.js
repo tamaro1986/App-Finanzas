@@ -1,34 +1,34 @@
 // ============================================================================
 // ARCHIVO: brandColors.js
-// PROPÓSITO: Constantes de identidad de marca NegociosGarcia
+// PROPÓSITO: Constantes de identidad de marca GarFinanzas (García Integrum)
 // ============================================================================
 
 // Paleta de colores corporativos
 export const BRAND_COLORS = {
     // Colores principales
-    navy: '#1e3a5f',      // Azul oscuro corporativo
-    green: '#0d8b5f',     // Verde corporativo
-    gold: '#d4af37',      // Dorado corporativo
+    navy: '#0f142b',      // Azul oscuro corporativo (fondo sidebar)
+    green: '#009f4d',     // Verde corporativo (logos/acentos)
+    gold: '#d4af37',      // Dorado corporativo (opcional)
     white: '#ffffff',     // Blanco
 
     // Variantes de navy
-    navyLight: '#2d5a8f',
-    navyDark: '#0f1f3f',
+    navyLight: '#1b2245', // Para hover en el sidebar
+    navyDark: '#080b1a',  // Para bordes en el sidebar
 
     // Variantes de verde
-    greenLight: '#10a674',
-    greenDark: '#096b47',
+    greenLight: '#00c760',
+    greenDark: '#007a3b',
 
     // Variantes de dorado
     goldLight: '#e6c75f',
     goldDark: '#b8941f',
 
     // Colores de fondo
-    bgLight: '#f9fafb',
+    bgLight: '#f4f6fa',
     bgEmerald: '#f0fdf4',
 
     // Colores de estado
-    success: '#10a674',
+    success: '#009f4d',
     error: '#dc2626',
     warning: '#f59e0b',
     info: '#3b82f6',
@@ -36,44 +36,44 @@ export const BRAND_COLORS = {
 
 // Gradientes de marca
 export const BRAND_GRADIENTS = {
-    primary: `linear-gradient(135deg, ${BRAND_COLORS.navy} 0%, ${BRAND_COLORS.green} 100%)`,
-    secondary: `linear-gradient(135deg, ${BRAND_COLORS.green} 0%, ${BRAND_COLORS.gold} 100%)`,
-    accent: `linear-gradient(135deg, ${BRAND_COLORS.gold} 0%, ${BRAND_COLORS.navy} 100%)`,
+    primary: `linear-gradient(135deg, ${BRAND_COLORS.navy} 0%, ${BRAND_COLORS.navyLight} 100%)`,
+    secondary: `linear-gradient(135deg, ${BRAND_COLORS.green} 0%, ${BRAND_COLORS.greenLight} 100%)`,
+    accent: `linear-gradient(135deg, ${BRAND_COLORS.navy} 0%, ${BRAND_COLORS.green} 100%)`,
 }
 
 // Tipografía de marca
 export const BRAND_FONTS = {
+    sansSerif: 'Inter, system-ui, sans-serif', // Updated to a modern sans-serif
     serif: 'Georgia, serif',
-    sansSerif: 'system-ui, -apple-system, sans-serif',
 }
 
 // Nombre y tagline
 export const BRAND_TEXT = {
-    name: 'NegociosGarcia',
-    tagline: 'Crecimiento y Confianza',
-    initials: 'NG',
+    name: 'GarFinanzas',
+    tagline: 'GARCÍA INTEGRUM',
+    initials: 'GF',
 }
 
 // Clases de Tailwind reutilizables
 export const BRAND_CLASSES = {
     // Botones
-    btnPrimary: 'bg-gradient-to-r from-[#1e3a5f] to-[#0d8b5f] hover:from-[#0d8b5f] hover:to-[#1e3a5f] text-white font-bold shadow-lg shadow-emerald-200 transition-all',
-    btnSecondary: 'bg-gradient-to-r from-[#0d8b5f] to-[#d4af37] hover:from-[#d4af37] hover:to-[#0d8b5f] text-white font-bold shadow-lg shadow-emerald-200 transition-all',
+    btnPrimary: 'bg-[#0f142b] hover:bg-[#1b2245] text-white font-bold shadow-lg shadow-[#0f142b]/20 transition-all',
+    btnSecondary: 'bg-[#009f4d] hover:bg-[#007a3b] text-white font-bold shadow-lg shadow-[#009f4d]/20 transition-all',
 
     // Inputs
-    input: 'border-2 border-slate-100 focus:border-[#0d8b5f] focus:ring-2 focus:ring-[#0d8b5f]/20 transition-all',
+    input: 'border-2 border-slate-100 focus:border-[#009f4d] focus:ring-2 focus:ring-[#009f4d]/20 transition-all',
 
     // Cards
     card: 'bg-white rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-all',
-    cardAccent: 'bg-white rounded-2xl shadow-sm border-2 border-[#0d8b5f]/10 hover:shadow-md transition-all',
+    cardAccent: 'bg-white rounded-2xl shadow-sm border-2 border-[#009f4d]/20 hover:shadow-md transition-all',
 
     // Texto
-    textPrimary: 'text-[#1e3a5f]',
-    textSecondary: 'text-[#0d8b5f]',
-    textAccent: 'text-[#d4af37]',
+    textPrimary: 'text-[#0f142b]',
+    textSecondary: 'text-[#009f4d]',
+    textAccent: 'text-slate-500',
 
     // Badges
-    badgeNavy: 'bg-[#1e3a5f]/10 text-[#1e3a5f] border border-[#1e3a5f]/20',
-    badgeGreen: 'bg-[#0d8b5f]/10 text-[#0d8b5f] border border-[#0d8b5f]/20',
-    badgeGold: 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20',
+    badgeNavy: 'bg-[#0f142b]/10 text-[#0f142b] border border-[#0f142b]/20',
+    badgeGreen: 'bg-[#009f4d]/10 text-[#009f4d] border border-[#009f4d]/20',
+    badgeGold: 'bg-slate-100 text-slate-700 border border-slate-200',
 }

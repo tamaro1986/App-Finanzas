@@ -127,6 +127,14 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
         targetField: null // 'newTx', 'transfer', 'edit'
     })
 
+    // ============================================================================
+    // ESTADOS: ENTRADA POR LOTES (MULTIPLE RECORDS)
+    // ============================================================================
+    const [isBatchMode, setIsBatchMode] = useState(false)
+    const [batchRows, setBatchRows] = useState([
+        { id: crypto.randomUUID(), date: format(new Date(), 'yyyy-MM-dd'), accountId: accounts[0]?.id || '', categoryId: '', amount: '', type: 'expense', note: '' }
+    ])
+
     const toggleCalculator = (field) => {
         if (calcState.isOpen && calcState.targetField === field) {
             setCalcState({ ...calcState, isOpen: false })
@@ -339,8 +347,8 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // PROPÓSITO: Agregar o editar transacción y actualizar balance de cuenta
     // SINCRONIZA: Tanto la transacción como la cuenta actualizada con Supabase
     // ============================================================================
-    const handleAddTransaction = async (e) => {
-        e.preventDefault()
+    const handleAddTransaction = async (e, keepOpen = false) => {
+        if (e && e.preventDefault) e.preventDefault()
 
         // Si es transferencia, usar el handler específico
         if (newTx.type === 'transfer') {
@@ -431,17 +439,105 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             await processTransaction(transaction)
         }
 
-        // Cerrar modal y resetear formulario
+        // Si keepOpen es true, solo reseteamos monto y nota, mantenemos fecha y cuenta
+        if (keepOpen) {
+            setNewTx(prev => ({
+                ...prev,
+                amount: '',
+                note: '',
+                attachment: null
+            }))
+            addNotification('Transacción guardada. Puedes añadir otra.', 'success')
+        }
+    }
+
+    // ============================================================================
+    // FUNCIONES: GESTIÓN DE LOTES (MULTI-REGISTRO)
+    // ============================================================================
+    const addBatchRow = () => {
+        const lastRow = batchRows[batchRows.length - 1]
+        setBatchRows([...batchRows, {
+            id: crypto.randomUUID(),
+            date: lastRow?.date || format(new Date(), 'yyyy-MM-dd'),
+            accountId: lastRow?.accountId || accounts[0]?.id || '',
+            categoryId: lastRow?.categoryId || '',
+            amount: '',
+            type: lastRow?.type || 'expense',
+            note: ''
+        }])
+    }
+
+    const removeBatchRow = (id) => {
+        if (batchRows.length > 1) {
+            setBatchRows(batchRows.filter(r => r.id !== id))
+        }
+    }
+
+    const updateBatchRow = (id, field, value) => {
+        setBatchRows(batchRows.map(r => r.id === id ? { ...r, [field]: value } : r))
+    }
+
+    const handleBatchSave = async (e) => {
+        if (e && e.preventDefault) e.preventDefault()
+
+        const validRows = batchRows.filter(r => r.amount && r.accountId && r.categoryId)
+        if (validRows.length === 0) {
+            alert('Por favor completa al menos una fila con monto, cuenta y categoría.')
+            return
+        }
+
+        addNotification(`Registrando ${validRows.length} movimientos...`, 'info')
+
+        let currentTxList = [...transactions]
+        let currentAccList = [...accounts]
+
+        for (const row of validRows) {
+            const amount = round2(row.amount)
+            const tx = { ...row, id: row.id || crypto.randomUUID(), amount }
+
+            // 1. Agregar a la lista local
+            currentTxList = [tx, ...currentTxList]
+
+            // 2. Actualizar balance local en la lista de cuentas
+            currentAccList = currentAccList.map(acc => {
+                if (acc.id === tx.accountId) {
+                    let newBalance = acc.balance
+                    if (acc.type === 'Préstamo') {
+                        newBalance = tx.type === 'income' ? acc.balance - amount : acc.balance + amount
+                    } else {
+                        newBalance = tx.type === 'income' ? acc.balance + amount : acc.balance - amount
+                    }
+                    return { ...acc, balance: round2(newBalance) }
+                }
+                return acc
+            })
+
+            // 3. Sincronizar individualmente como lo hace processTransaction
+            await saveToSupabase('transactions', 'finanzas_transactions', tx, currentTxList)
+            const updatedAccount = currentAccList.find(a => a.id === tx.accountId)
+            if (updatedAccount) {
+                await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, currentAccList)
+            }
+        }
+
+        // 4. Commitear estados finales
+        setTransactions(currentTxList)
+        setAccounts(currentAccList)
+
         setIsModalOpen(false)
-        setNewTx({
+        setIsBatchMode(false)
+        addNotification(`${validRows.length} movimientos registrados con éxito`, 'success')
+
+        // Resetear a estado inicial
+        setBatchRows([{
+            id: crypto.randomUUID(),
             date: format(new Date(), 'yyyy-MM-dd'),
             accountId: accounts[0]?.id || '',
             categoryId: '',
             amount: '',
             type: 'expense',
-            note: '',
-            attachment: null
-        })
+            note: ''
+        }])
     }
 
     // Función auxiliar para procesar transacción y actualizar balances
@@ -2381,133 +2477,102 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             {isModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={closeModal} />
-                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
+                    <div className={`relative bg-white rounded-2xl shadow-2xl w-full transition-all duration-300 ${isBatchMode ? 'max-w-6xl' : 'max-w-md'} overflow-hidden animate-in zoom-in-95 duration-300`}>
                         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                            <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>
-                                {(newTx.id || transferData.id) ? 'Editar Movimiento' : 'Nuevo Movimiento'}
-                            </h3>
+                            <div className="flex items-center gap-4">
+                                <h3 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Georgia, serif' }}>
+                                    {(newTx.id || transferData.id) ? 'Editar Movimiento' : (isBatchMode ? 'Registro Múltiple' : 'Nuevo Movimiento')}
+                                </h3>
+                                {!newTx.id && !transferData.id && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsBatchMode(!isBatchMode)}
+                                        className={`text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-widest transition-all ${isBatchMode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                    >
+                                        {isBatchMode ? 'Vista Formulario' : 'Vista Listado'}
+                                    </button>
+                                )}
+                            </div>
                             <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 transition-colors">
                                 <X size={20} />
                             </button>
                         </div>
 
-                        <form onSubmit={handleAddTransaction} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
-                            {/* Type Toggle - 3 opciones */}
-                            <div className="grid grid-cols-3 gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setNewTx({ ...newTx, type: 'income', categoryId: '' })}
-                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'income' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
-                                >
-                                    <ArrowUpCircle size={16} /> Ingreso
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setNewTx({ ...newTx, type: 'expense', categoryId: '' })}
-                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'expense' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
-                                >
-                                    <ArrowDownCircle size={16} /> Gasto
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setNewTx({ ...newTx, type: 'transfer', categoryId: '' })}
-                                    className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'transfer' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
-                                >
-                                    🔄 Transfer
-                                </button>
-                            </div>
+                        {/* Contenido Condicional: Batch vs Single */}
+                        {!isBatchMode || newTx.id || transferData.id ? (
+                            <form onSubmit={handleAddTransaction} className="p-8 space-y-5 max-h-[70vh] overflow-y-auto">
+                                {/* Type Toggle - 3 opciones */}
+                                <div className="grid grid-cols-3 gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewTx({ ...newTx, type: 'income', categoryId: '' })}
+                                        className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'income' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    >
+                                        <ArrowUpCircle size={16} /> Ingreso
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewTx({ ...newTx, type: 'expense', categoryId: '' })}
+                                        className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'expense' ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    >
+                                        <ArrowDownCircle size={16} /> Gasto
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewTx({ ...newTx, type: 'transfer', categoryId: '' })}
+                                        className={`py-3 rounded-xl font-bold transition-all border flex items-center justify-center gap-2 text-sm ${newTx.type === 'transfer' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-slate-100'}`}
+                                    >
+                                        🔄 Transfer
+                                    </button>
+                                </div>
 
-                            {newTx.type === 'transfer' ? (
-                                /* UI PARA TRANSFERENCIAS */
-                                <>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Fecha</label>
-                                        <input
-                                            type="date" required className="input-field"
-                                            value={transferData.date} onChange={e => setTransferData({ ...transferData, date: e.target.value })}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Desde Cuenta</label>
-                                        <select
-                                            required className="input-field"
-                                            value={transferData.fromAccountId} onChange={e => setTransferData({ ...transferData, fromAccountId: e.target.value })}
-                                        >
-                                            <option value="">Selecciona cuenta origen</option>
-                                            {accounts.map(acc => (
-                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Hacia Cuenta</label>
-                                        <select
-                                            required className="input-field"
-                                            value={transferData.toAccountId} onChange={e => setTransferData({ ...transferData, toAccountId: e.target.value })}
-                                        >
-                                            <option value="">Selecciona cuenta destino</option>
-                                            {accounts
-                                                .filter(acc => acc.id !== transferData.fromAccountId)
-                                                .map(acc => (
-                                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
-                                                ))
-                                            }
-                                        </select>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between pl-1">
-                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monto ($)</label>
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleCalculator('transfer')}
-                                                className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'transfer' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
-                                            >
-                                                <Calculator size={14} />
-                                            </button>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="number" step="0.01" required placeholder="0.00" className="input-field"
-                                                value={transferData.amount} onChange={e => setTransferData({ ...transferData, amount: e.target.value })}
-                                            />
-                                            {calcState.isOpen && calcState.targetField === 'transfer' && <CalculatorUI />}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota (Opcional)</label>
-                                        <input
-                                            type="text" placeholder="Ej. Retiro cajero" className="input-field"
-                                            value={transferData.note} onChange={e => setTransferData({ ...transferData, note: e.target.value })}
-                                        />
-                                    </div>
-
-                                    <div className="flex gap-4 pt-4">
-                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
-                                        <button type="submit" className="flex-1 btn-primary !py-3">Transferir</button>
-                                    </div>
-                                </>
-                            ) : (
-                                /* UI PARA INGRESOS/GASTOS */
-                                <>
-                                    <div className="grid grid-cols-2 gap-4">
+                                {newTx.type === 'transfer' ? (
+                                    /* UI PARA TRANSFERENCIAS */
+                                    <>
                                         <div className="space-y-2">
                                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Fecha</label>
                                             <input
                                                 type="date" required className="input-field"
-                                                value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })}
+                                                value={transferData.date} onChange={e => setTransferData({ ...transferData, date: e.target.value })}
                                             />
                                         </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Desde Cuenta</label>
+                                            <select
+                                                required className="input-field"
+                                                value={transferData.fromAccountId} onChange={e => setTransferData({ ...transferData, fromAccountId: e.target.value })}
+                                            >
+                                                <option value="">Selecciona cuenta origen</option>
+                                                {accounts.map(acc => (
+                                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Hacia Cuenta</label>
+                                            <select
+                                                required className="input-field"
+                                                value={transferData.toAccountId} onChange={e => setTransferData({ ...transferData, toAccountId: e.target.value })}
+                                            >
+                                                <option value="">Selecciona cuenta destino</option>
+                                                {accounts
+                                                    .filter(acc => acc.id !== transferData.fromAccountId)
+                                                    .map(acc => (
+                                                        <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                                    ))
+                                                }
+                                            </select>
+                                        </div>
+
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between pl-1">
                                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monto ($)</label>
                                                 <button
                                                     type="button"
-                                                    onClick={() => toggleCalculator('newTx')}
-                                                    className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'newTx' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
+                                                    onClick={() => toggleCalculator('transfer')}
+                                                    className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'transfer' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
                                                 >
                                                     <Calculator size={14} />
                                                 </button>
@@ -2515,83 +2580,242 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                             <div className="relative">
                                                 <input
                                                     type="number" step="0.01" required placeholder="0.00" className="input-field"
-                                                    value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })}
+                                                    value={transferData.amount} onChange={e => setTransferData({ ...transferData, amount: e.target.value })}
                                                 />
-                                                {calcState.isOpen && calcState.targetField === 'newTx' && <CalculatorUI />}
+                                                {calcState.isOpen && calcState.targetField === 'transfer' && <CalculatorUI />}
                                             </div>
                                         </div>
-                                    </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Cuenta</label>
-                                        <select
-                                            required className="input-field"
-                                            value={newTx.accountId} onChange={e => setNewTx({ ...newTx, accountId: e.target.value })}
-                                        >
-                                            <option value="">Selecciona una cuenta</option>
-                                            {accounts.map(acc => (
-                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota (Opcional)</label>
+                                            <input
+                                                type="text" placeholder="Ej. Retiro cajero" className="input-field"
+                                                value={transferData.note} onChange={e => setTransferData({ ...transferData, note: e.target.value })}
+                                            />
+                                        </div>
 
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Categoría</label>
-                                        <select
-                                            required className="input-field"
-                                            value={newTx.categoryId} onChange={e => setNewTx({ ...newTx, categoryId: e.target.value })}
-                                        >
-                                            <option value="">Selecciona una categoría</option>
-                                            {categories.map(cat => (
-                                                <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota / Descripción</label>
-                                        <input
-                                            type="text" placeholder="Ej. Pago de internet" className="input-field"
-                                            value={newTx.note} onChange={e => setNewTx({ ...newTx, note: e.target.value })}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Comprobante (Opcional)</label>
-                                        <div className="flex items-center gap-4">
-                                            <div className="relative flex-1">
+                                        <div className="flex gap-4 pt-4">
+                                            <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
+                                            <button type="submit" className="flex-1 btn-primary !py-3">Transferir</button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    /* UI PARA INGRESOS/GASTOS */
+                                    <>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Fecha</label>
                                                 <input
-                                                    type="file" accept="image/*" capture="environment"
-                                                    onChange={handleFileChange}
-                                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                                                    type="date" required className="input-field"
+                                                    value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })}
                                                 />
-                                                <div className="btn-secondary !w-full flex items-center justify-center gap-2 !py-2.5">
-                                                    <Camera size={18} />
-                                                    <span>{newTx.attachment ? 'Cambiar Foto' : 'Tomar Foto / Subir'}</span>
-                                                </div>
                                             </div>
-                                            {newTx.attachment && (
-                                                <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200">
-                                                    <img src={newTx.attachment} className="w-full h-full object-cover" />
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between pl-1">
+                                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monto ($)</label>
                                                     <button
                                                         type="button"
-                                                        onClick={() => setNewTx({ ...newTx, attachment: null })}
-                                                        className="absolute top-0 right-0 bg-rose-500 text-white rounded-bl-lg p-0.5"
+                                                        onClick={() => toggleCalculator('newTx')}
+                                                        className={`p-1 rounded-md transition-colors ${calcState.isOpen && calcState.targetField === 'newTx' ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:text-blue-500'}`}
                                                     >
-                                                        <X size={10} />
+                                                        <Calculator size={14} />
                                                     </button>
                                                 </div>
-                                            )}
+                                                <div className="relative">
+                                                    <input
+                                                        type="number" step="0.01" required placeholder="0.00" className="input-field"
+                                                        value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })}
+                                                    />
+                                                    {calcState.isOpen && calcState.targetField === 'newTx' && <CalculatorUI />}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div className="flex gap-4 pt-4">
-                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
-                                        <button type="submit" className="flex-1 btn-primary !py-3">Guardar</button>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Cuenta</label>
+                                            <select
+                                                required className="input-field"
+                                                value={newTx.accountId} onChange={e => setNewTx({ ...newTx, accountId: e.target.value })}
+                                            >
+                                                <option value="">Selecciona una cuenta</option>
+                                                {accounts.map(acc => (
+                                                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Categoría</label>
+                                            <select
+                                                required className="input-field"
+                                                value={newTx.categoryId} onChange={e => setNewTx({ ...newTx, categoryId: e.target.value })}
+                                            >
+                                                <option value="">Selecciona una categoría</option>
+                                                {categories.map(cat => (
+                                                    <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Nota / Descripción</label>
+                                            <input
+                                                type="text" placeholder="Ej. Pago de internet" className="input-field"
+                                                value={newTx.note} onChange={e => setNewTx({ ...newTx, note: e.target.value })}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">Comprobante (Opcional)</label>
+                                            <div className="flex items-center gap-4">
+                                                <div className="relative flex-1">
+                                                    <input
+                                                        type="file" accept="image/*" capture="environment"
+                                                        onChange={handleFileChange}
+                                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                                                    />
+                                                    <div className="btn-secondary !w-full flex items-center justify-center gap-2 !py-2.5">
+                                                        <Camera size={18} />
+                                                        <span>{newTx.attachment ? 'Cambiar Foto' : 'Tomar Foto / Subir'}</span>
+                                                    </div>
+                                                </div>
+                                                {newTx.attachment && (
+                                                    <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200">
+                                                        <img src={newTx.attachment} className="w-full h-full object-cover" />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setNewTx({ ...newTx, attachment: null })}
+                                                            className="absolute top-0 right-0 bg-rose-500 text-white rounded-bl-lg p-0.5"
+                                                        >
+                                                            <X size={10} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-4 pt-4">
+                                            <button type="button" onClick={closeModal} className="flex-1 py-3 font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all">Cancelar</button>
+                                            <button type="submit" className="flex-1 btn-primary !py-3">Guardar</button>
+                                        </div>
+                                    </>
+                                )}
+                            </form>
+                        ) : (
+                            /* UI PARA REGISTRO MÚLTIPLE (BATCH MODE) */
+                            <div className="p-4 flex flex-col h-[70vh]">
+                                <div className="flex-1 overflow-auto rounded-xl border border-slate-100 mb-4 shadow-sm bg-slate-50/30">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="sticky top-0 bg-slate-100 z-10">
+                                            <tr className="text-[10px] uppercase tracking-widest text-slate-400 font-bold border-b border-slate-200">
+                                                <th className="px-4 py-3 min-w-[120px]">Fecha</th>
+                                                <th className="px-4 py-3 min-w-[100px]">Tipo</th>
+                                                <th className="px-4 py-3 min-w-[180px]">Cuenta</th>
+                                                <th className="px-4 py-3 min-w-[180px]">Categoría</th>
+                                                <th className="px-4 py-3 min-w-[120px]">Monto ($)</th>
+                                                <th className="px-4 py-3 min-w-[200px]">Nota</th>
+                                                <th className="px-4 py-3 w-10"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 bg-white">
+                                            {batchRows.map((row) => (
+                                                <tr key={row.id} className="hover:bg-slate-50/80 transition-colors group">
+                                                    <td className="px-2 py-2">
+                                                        <input
+                                                            type="date"
+                                                            value={row.date}
+                                                            onChange={(e) => updateBatchRow(row.id, 'date', e.target.value)}
+                                                            className="w-full bg-transparent border-none text-xs focus:ring-0 p-2 cursor-pointer"
+                                                        />
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <select
+                                                            value={row.type}
+                                                            onChange={(e) => updateBatchRow(row.id, 'type', e.target.value)}
+                                                            className={`w-full bg-transparent border-none text-[10px] font-black uppercase tracking-tight focus:ring-0 px-2 py-1 rounded-lg ${row.type === 'income' ? 'text-emerald-600 bg-emerald-50/50' : 'text-rose-600 bg-rose-50/50'}`}
+                                                        >
+                                                            <option value="expense">Gasto</option>
+                                                            <option value="income">Ingreso</option>
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <select
+                                                            value={row.accountId}
+                                                            onChange={(e) => updateBatchRow(row.id, 'accountId', e.target.value)}
+                                                            className="w-full bg-transparent border-none text-xs focus:ring-0 p-2"
+                                                        >
+                                                            <option value="">Selección...</option>
+                                                            {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <select
+                                                            value={row.categoryId}
+                                                            onChange={(e) => updateBatchRow(row.id, 'categoryId', e.target.value)}
+                                                            className="w-full bg-transparent border-none text-xs focus:ring-0 p-2"
+                                                        >
+                                                            <option value="">Selección...</option>
+                                                            {getCombinedCategories(row.type).map(cat => (
+                                                                <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <input
+                                                            type="number"
+                                                            step="0.01"
+                                                            placeholder="0.00"
+                                                            value={row.amount}
+                                                            onChange={(e) => updateBatchRow(row.id, 'amount', e.target.value)}
+                                                            className="w-full bg-transparent border-none text-xs font-black focus:ring-0 p-2 text-right"
+                                                        />
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="..."
+                                                            value={row.note}
+                                                            onChange={(e) => updateBatchRow(row.id, 'note', e.target.value)}
+                                                            className="w-full bg-transparent border-none text-xs focus:ring-0 p-2"
+                                                        />
+                                                    </td>
+                                                    <td className="px-2 py-2 text-center">
+                                                        <button
+                                                            onClick={() => removeBatchRow(row.id)}
+                                                            disabled={batchRows.length === 1}
+                                                            className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg disabled:opacity-0 transition-all"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-4 px-2">
+                                    <button
+                                        onClick={addBatchRow}
+                                        className="flex items-center gap-2 px-6 py-3 bg-blue-50 text-blue-600 rounded-xl font-bold border border-blue-100 hover:bg-blue-100 transition-all"
+                                    >
+                                        <Plus size={18} /> Añadir Línea
+                                    </button>
+
+                                    <div className="flex gap-4">
+                                        <button onClick={closeModal} className="px-8 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-all">
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleBatchSave}
+                                            className="px-8 py-3 btn-primary shadow-lg shadow-blue-500/20"
+                                        >
+                                            Guardar Todo ({batchRows.filter(r => r.amount).length})
+                                        </button>
                                     </div>
-                                </>
-                            )}
-                        </form>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
