@@ -227,36 +227,40 @@ const MedicalHistory = ({ records, setRecords, patients, setPatients }) => {
         }
     }
 
-    const filteredRecords = (records || [])
-        .filter(r => r && typeof r === 'object') // Asegurar que r existe y es objeto
-        .filter(r =>
-            (r.personName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-            (r.reason?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-        )
-        .sort((a, b) => {
-            try {
-                return parseISO(b.date) - parseISO(a.date)
-            } catch (e) {
-                return 0
-            }
-        })
+    const filteredRecords = React.useMemo(() => {
+        return (records || [])
+            .filter(r => r && typeof r === 'object') // Asegurar que r existe y es objeto
+            .filter(r =>
+                (r.personName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+                (r.reason?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+            )
+            .sort((a, b) => {
+                try {
+                    return parseISO(b.date) - parseISO(a.date)
+                } catch (e) {
+                    return 0
+                }
+            })
+    }, [records, searchQuery])
 
-    const nextAppointment = (records || [])
-        .filter(r => r && r.hasFollowUp && r.followUpDate)
-        .filter(r => {
-            try {
-                return isAfter(parseISO(r.followUpDate), new Date())
-            } catch (e) {
-                return false
-            }
-        })
-        .sort((a, b) => {
-            try {
-                return parseISO(a.followUpDate) - parseISO(b.followUpDate)
-            } catch (e) {
-                return 0
-            }
-        })[0]
+    const nextAppointment = React.useMemo(() => {
+        return (records || [])
+            .filter(r => r && r.hasFollowUp && r.followUpDate)
+            .filter(r => {
+                try {
+                    return isAfter(parseISO(r.followUpDate), new Date())
+                } catch (e) {
+                    return false
+                }
+            })
+            .sort((a, b) => {
+                try {
+                    return parseISO(a.followUpDate) - parseISO(b.followUpDate)
+                } catch (e) {
+                    return 0
+                }
+            })[0]
+    }, [records])
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500 pb-20">

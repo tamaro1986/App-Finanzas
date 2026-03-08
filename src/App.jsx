@@ -1,27 +1,27 @@
 // ============================================================================
 // IMPORTS: Componentes y autenticación
 // ============================================================================
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense, lazy } from 'react'
 import Sidebar from './components/Sidebar'
 import Dashboard from './components/Dashboard'
-import BudgetModule from './components/BudgetModule'
-import Settings from './components/Settings'
-import Accounts from './components/Accounts'
-import Transactions from './components/Transactions'
-import Vehicles from './components/Vehicles'
-import MedicalHistory from './components/MedicalHistory'
-import Journal from './components/Journal'
-import DebtModule from './components/DebtModule'
-import InvestmentPortfolio from './components/InvestmentPortfolio'
-import BusinessModule from './components/BusinessModule'
 import Auth from './components/Auth'
-import CategoryCharts from './components/CategoryCharts'
 import SyncStatusIndicator from './components/SyncStatusIndicator'
 import { SyncNotificationProvider } from './components/SyncNotification'
 import { Menu, X, LogOut, Loader } from 'lucide-react'
 import { supabase } from './lib/supabase'
-// Importar herramientas de recuperación de datos (disponibles en window.finanzasDebug)
 import './utils/dataRecovery'
+
+const BudgetModule = lazy(() => import('./components/BudgetModule'))
+const Settings = lazy(() => import('./components/Settings'))
+const Accounts = lazy(() => import('./components/Accounts'))
+const Transactions = lazy(() => import('./components/Transactions'))
+const Vehicles = lazy(() => import('./components/Vehicles'))
+const MedicalHistory = lazy(() => import('./components/MedicalHistory'))
+const Journal = lazy(() => import('./components/Journal'))
+const DebtModule = lazy(() => import('./components/DebtModule'))
+const InvestmentPortfolio = lazy(() => import('./components/InvestmentPortfolio'))
+const BusinessModule = lazy(() => import('./components/BusinessModule'))
+const CategoryCharts = lazy(() => import('./components/CategoryCharts'))
 
 // ============================================================================
 // COMPONENTE PRINCIPAL: App
@@ -360,7 +360,9 @@ function App() {
                 <main className="flex-1 overflow-y-auto pt-16 lg:pt-0">
                     <div className="max-w-7xl mx-auto p-6 md:p-10">
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            {renderView()}
+                            <Suspense fallback={<div className="flex items-center justify-center h-64"><Loader className="animate-spin text-emerald-600" size={48} /></div>}>
+                                {renderView()}
+                            </Suspense>
                         </div>
                     </div>
                 </main>
