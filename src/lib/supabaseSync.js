@@ -282,12 +282,27 @@ export const fetchFromSupabase = async (tableName) => {
 // RETORNA: Boolean indicando si el guardado fue exitoso
 // ============================================================================
 export const saveToSupabase = async (tableName, localStorageKey, item, allItems) => {
+    // Agregar marca de tiempo para resolución de conflictos inteligente
+    const now = new Date().toISOString();
+    if (item) item.updatedAt = now;
+
     // Primero guardar en localStorage (siempre funciona como backup)
     try {
-        localStorage.setItem(localStorageKey, JSON.stringify(allItems))
+        if (allItems) {
+            // Asegurar que todos tengan updatedAt para el merge inteligente
+            const itemsWithTime = allItems.map(i => {
+                if (i.id === item?.id) return { ...i, updatedAt: now };
+                return i;
+            });
+            localStorage.setItem(localStorageKey, JSON.stringify(itemsWithTime))
+
+            // Log especial para ambiente de prueba
+            if (window.location.hostname === 'localhost') {
+                console.log(`%c[Browser Persistence] Datos guardados en local (${localStorageKey})`, 'color: #10b981; font-weight: bold;');
+            }
+        }
     } catch (localError) {
         console.error('Error saving to localStorage:', localError)
-        // Si falla localStorage, es un problema crítico
         return { success: false, savedToCloud: false, savedLocally: false, error: localError }
     }
 

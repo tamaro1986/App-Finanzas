@@ -9,6 +9,7 @@ ALTER TABLE finanzas_business_products
     ADD COLUMN IF NOT EXISTS product_type TEXT DEFAULT 'producto_terminado'
         CHECK (product_type IN ('materia_prima', 'producto_terminado')),
     ADD COLUMN IF NOT EXISTS unit_of_measure TEXT DEFAULT 'und',
+    ADD COLUMN IF NOT EXISTS markup_percentage NUMERIC DEFAULT 0,
     ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'activo'
         CHECK (status IN ('activo', 'inactivo'));
 

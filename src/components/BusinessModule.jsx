@@ -4,10 +4,9 @@ import { saveToSupabase, deleteFromSupabase, getUserId } from '../lib/supabaseSy
 import { useSyncNotifications } from './SyncNotification';
 import { supabase } from '../lib/supabase';
 
-// ERP Sub-modules
 import DashboardERP from './erp/DashboardERP';
-import InventoryHub from './erp/InventoryHub';
-import RecipeManager from './erp/RecipeManager';
+import CatalogModule from './erp/CatalogModule';
+import PurchaseModule from './erp/PurchaseModule';
 import ProductionOrders from './erp/ProductionOrders';
 import SalesModule from './erp/SalesModule';
 import KardexReport from './erp/KardexReport';
@@ -21,8 +20,8 @@ const styles = `
 
 const TABS = [
     { id: 'dashboard', label: 'Resumen', Icon: LayoutDashboard },
-    { id: 'inventory', label: 'Inventario', Icon: Package },
-    { id: 'recipes', label: 'Fórmulas / Recetas', Icon: FlaskConical },
+    { id: 'catalog', label: 'Catálogo e Inventario', Icon: Package },
+    { id: 'purchases', label: 'Compras', Icon: ShoppingCart },
     { id: 'production', label: 'Fabricación', Icon: Factory },
     { id: 'sales', label: 'Ventas', Icon: TrendingUp },
     { id: 'kardex', label: 'Kardex', Icon: Activity },
@@ -49,6 +48,8 @@ export default function BusinessModule({
     bizSuppliers, setBizSuppliers,
     bizPurchases, setBizPurchases,
     bizPurchaseItems, setBizPurchaseItems,
+    bizSales, setBizSales,
+    bizSaleItems, setBizSaleItems,
     bizRecipes, setBizRecipes,
     bizRecipeItems, setBizRecipeItems,
     bizProductionOrders, setBizProductionOrders,
@@ -93,7 +94,7 @@ export default function BusinessModule({
             current_stock: Number(data.currentStock || 0),
             average_cost: Number(data.averageCost || 0),
             base_price: Number(data.basePrice || 0),
-            min_stock: Number(data.minStock || 0),
+            min_stock_level: Number(data.minStock || 0),
             status: data.status || 'active'
         };
 
@@ -113,84 +114,134 @@ export default function BusinessModule({
     }, [products, setProducts, addNotification]);
 
     // ====== PURCHASE with WAC (MP & Purchased PT) ======
+    // ====== PURCHASE with WAC (MP & Purchased PT) ======
     const handleSavePurchase = useCallback(async ({ purchase, items, movements, financeTx }) => {
-        const updatedProducts = products.map(p => {
+        const isUpdate = bizPurchases.some(p => p.id === purchase.id);
+        const currentProducts = products || [];
+
+        // 0. Si es ACTUALIZACIÓN, revertimos primero el stock antiguo
+        let baseProductsForCalc = [...currentProducts];
+        if (isUpdate) {
+            const oldItems = bizPurchaseItems.filter(i => i.purchaseId === purchase.id);
+            baseProductsForCalc = baseProductsForCalc.map(p => {
+                const oldItem = oldItems.find(oi => oi.productId === p.id);
+                if (!oldItem) return p;
+                return { ...p, currentStock: Number(p.currentStock || 0) - Number(oldItem.quantity || 0) };
+            });
+        }
+
+        // 1. Calcular nuevos estados de productos con WAC
+        const finalProductsList = baseProductsForCalc.map(p => {
             const item = items.find(i => i.productId === p.id);
             if (!item) return p;
-            const newAvgCost = calcWAC(p.currentStock, p.averageCost, item.quantity, item.unitCost);
-            const newStock = Number(p.currentStock || 0) + Number(item.quantity);
 
-            // Auto update sales price for PT if they have a markup set
-            let basePrice = p.basePrice;
+            const buyQty = Number(item.quantity) || 0;
+            const buyUnitCost = Number(item.unitCost) || 0;
+            const newStock = Number(p.currentStock || 0) + buyQty;
+            const newAvgCost = calcWAC(p.currentStock, p.averageCost, buyQty, buyUnitCost);
+
+            let basePrice = p.basePrice || 0;
             if (p.productType === 'producto_terminado' && p.markupPercentage) {
-                basePrice = newAvgCost * (1 + (p.markupPercentage / 100));
+                basePrice = newAvgCost * (1 + (Number(p.markupPercentage) / 100));
             }
 
-            return { ...p, currentStock: newStock, averageCost: Number(newAvgCost.toFixed(4)), basePrice };
-        });
-        setProducts(updatedProducts);
-
-        const newPurchases = [...(bizPurchases || []), purchase];
-        const newItems = [...(bizPurchaseItems || []), ...items];
-        const newMovements = [...(bizMovements || []), ...movements];
-
-        setBizPurchases(newPurchases);
-        setBizPurchaseItems(newItems);
-        setBizMovements(newMovements);
-
-        // --- Finance Ledger Integration ---
-        if (financeTx && financeTx.accountId) {
-            const newTx = {
-                id: crypto.randomUUID(),
-                date: purchase.date,
-                accountId: financeTx.accountId,
-                categoryId: financeTx.categoryId || 'erp_purchase',
-                amount: Number(purchase.total || 0),
-                type: 'expense',
-                note: `Compra ERP: ${purchase.id.slice(0, 8)} - ${purchase.notes || ''}`,
-                referenceType: 'erp_purchase',
-                referenceId: purchase.id,
-                attachment: financeTx.attachment
+            return {
+                ...p,
+                currentStock: Number(newStock.toFixed(4)),
+                averageCost: Number(newAvgCost.toFixed(4)),
+                basePrice: Number(Number(basePrice).toFixed(2))
             };
+        });
 
-            const updatedTransactions = [newTx, ...(transactions || [])];
-            setTransactions(updatedTransactions);
+        // 2. Actualizar Estados Locales
+        const nextPurchases = isUpdate ? (bizPurchases || []).map(p => p.id === purchase.id ? purchase : p) : [...(bizPurchases || []), purchase];
+        const nextItems = isUpdate ? [...(bizPurchaseItems || []).filter(i => i.purchaseId !== purchase.id), ...items] : [...(bizPurchaseItems || []), ...items];
+        const nextMovements = isUpdate ? [...(bizMovements || []).filter(m => m.referenceId !== purchase.id || (m.referenceId === purchase.id && m.referenceType !== 'purchase')), ...movements] : [...(bizMovements || []), ...movements];
 
-            const updatedAccounts = (accounts || []).map(acc => {
-                if (acc.id === financeTx.accountId) {
-                    const amount = Number(purchase.total || 0);
-                    const newBalance = acc.type === 'Préstamo' ? acc.balance + amount : acc.balance - amount;
-                    return { ...acc, balance: Math.round((newBalance + Number.EPSILON) * 100) / 100 };
-                }
-                return acc;
-            });
-            setAccounts(updatedAccounts);
+        // 2. Actualizar Estados Locales
+        setProducts(finalProductsList);
+        setBizPurchases(nextPurchases);
+        setBizPurchaseItems(nextItems);
+        setBizMovements(nextMovements);
 
-            // Sync finance to cloud
-            saveToSupabase('transactions', 'finanzas_transactions', newTx, updatedTransactions);
-            const affectedAcc = updatedAccounts.find(a => a.id === financeTx.accountId);
-            if (affectedAcc) saveToSupabase('accounts', 'finanzas_accounts', affectedAcc, updatedAccounts);
-        }
+        // 3. Integración con Finanzas (Simplificado)
+        // Se puede añadir lógica aquí si se requiere pago automático
 
+        // 4. Sincronizar a Cloud
         try {
-            await saveToSupabase('finanzas_biz_purchases', 'finanzas_biz_purchases_local', purchase, newPurchases);
-            for (const item of items) await saveToSupabase('finanzas_biz_purchase_items', 'finanzas_biz_purchase_items_local', item, newItems);
-            for (const mov of movements) await saveToSupabase('finanzas_biz_inventory_movements', 'finanzas_biz_movements_local', mov, newMovements);
-            for (const prod of updatedProducts.filter(p => items.find(i => i.productId === p.id))) {
-                const sprod = {
-                    id: prod.id, name: prod.name, sku: prod.sku, type: prod.productType, unit_of_measure: prod.unitOfMeasure,
-                    stock: Number(prod.currentStock || 0), cost: Number(prod.averageCost || 0), price: Number(prod.basePrice || 0),
-                    min_stock: Number(prod.minStock || 0), status: prod.status || 'active'
-                };
-                if (prod.hasOwnProperty('markupPercentage')) sprod.markup_percentage = Number(prod.markupPercentage || 0);
-                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', sprod, updatedProducts);
+            if (isUpdate) {
+                await supabase.from('finanzas_biz_purchase_items').delete().eq('purchase_id', purchase.id);
+                await supabase.from('finanzas_biz_inventory_movements').delete().eq('reference_id', purchase.id).eq('reference_type', 'purchase');
             }
-            addNotification('Compra registrada · Inventario actualizado', 'success');
+
+            await saveToSupabase('finanzas_biz_purchases', 'finanzas_biz_purchases_local', purchase, nextPurchases);
+            for (const item of items) await saveToSupabase('finanzas_biz_purchase_items', 'finanzas_biz_purchase_items_local', item, nextItems);
+            for (const mov of movements) await saveToSupabase('finanzas_biz_inventory_movements', 'finanzas_biz_movements_local', mov, nextMovements);
+
+            // Sincronizar productos afectados
+            const affectedProds = finalProductsList.filter(p => items.some(i => i.productId === p.id) || (isUpdate && bizPurchaseItems.some(oi => oi.purchaseId === purchase.id && oi.productId === p.id)));
+            for (const prod of affectedProds) {
+                const sprod = {
+                    id: prod.id,
+                    sku: prod.sku || '',
+                    name: prod.name || 'Sin nombre',
+                    product_type: prod.productType,
+                    unit_of_measure: prod.unitOfMeasure,
+                    current_stock: Number(prod.currentStock || 0),
+                    average_cost: Number(prod.averageCost || 0),
+                    base_price: Number(prod.basePrice || 0),
+                    min_stock_level: Number(prod.minStock || 0),
+                    status: prod.status || 'active',
+                    markup_percentage: Number(prod.markupPercentage || 0)
+                };
+                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', sprod, finalProductsList);
+            }
+            addNotification(isUpdate ? 'Compra actualizada' : 'Compra registrada', 'success');
         } catch (e) {
-            console.error("ERP Purchase Error (possibly missing tables):", e);
-            addNotification('Compra guardada localmente', 'warning');
+            console.error("ERP Purchase Sync Error:", e);
+            addNotification('Sincronización pendiente', 'warning');
         }
     }, [products, setProducts, bizPurchases, setBizPurchases, bizPurchaseItems, setBizPurchaseItems, bizMovements, setBizMovements, addNotification]);
+
+    const handleDeletePurchase = useCallback(async (id) => {
+        const purchase = bizPurchases.find(p => p.id === id);
+        if (!purchase) return;
+
+        const items = bizPurchaseItems.filter(i => i.purchaseId === id);
+
+        // Revertir Stock
+        const nextProducts = products.map(p => {
+            const item = items.find(i => i.productId === p.id);
+            if (!item) return p;
+            return { ...p, currentStock: Math.max(0, Number(p.currentStock || 0) - Number(item.quantity)) };
+        });
+
+        // Actualizar Estados locales
+        const nextPurchases = (bizPurchases || []).filter(p => p.id !== id);
+        const nextItems = (bizPurchaseItems || []).filter(i => i.purchaseId !== id);
+        const nextMovements = (bizMovements || []).filter(m => !(m.referenceId === id && m.referenceType === 'purchase'));
+
+        setProducts(nextProducts);
+        setBizPurchases(nextPurchases);
+        setBizPurchaseItems(nextItems);
+        setBizMovements(nextMovements);
+
+        // Cloud Delete
+        try {
+            await deleteFromSupabase('finanzas_biz_purchases', 'finanzas_biz_purchases_local', id, nextPurchases);
+            localStorage.setItem('finanzas_biz_purchase_items_local', JSON.stringify(nextItems));
+            localStorage.setItem('finanzas_biz_movements_local', JSON.stringify(nextMovements));
+
+            await supabase.from('finanzas_biz_purchase_items').delete().eq('purchase_id', id);
+            await supabase.from('finanzas_biz_inventory_movements').delete().eq('reference_id', id).eq('reference_type', 'purchase');
+
+            // Sync products
+            for (const prod of nextProducts.filter(p => items.some(i => i.productId === p.id))) {
+                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', prod, nextProducts);
+            }
+            addNotification('Compra eliminada y Stock revertido', 'info');
+        } catch (e) { addNotification('Eliminado localmente', 'warning'); }
+    }, [products, bizPurchases, bizPurchaseItems, setProducts, setBizPurchases, setBizPurchaseItems, setBizMovements, addNotification]);
 
     // ====== PRODUCTION ORDER (WAC based on materials) ======
     const handleSaveOrder = useCallback(async ({ orderData, materialCheck, product }) => {
@@ -206,11 +257,17 @@ export default function BusinessModule({
                 const newStock = Number(p.currentStock || 0) + Number(orderData.quantityToProduce);
                 const newAvgCost = calcWAC(p.currentStock, p.averageCost, orderData.quantityToProduce, productionUnitCost);
 
-                let basePrice = p.basePrice;
-                if (p.markupPercentage) {
-                    basePrice = newAvgCost * (1 + (p.markupPercentage / 100));
+                let basePrice = p.basePrice || 0;
+                const markup = Number(p.markupPercentage) || 0;
+                if (markup > 0) {
+                    basePrice = newAvgCost * (1 + (markup / 100));
                 }
-                return { ...p, currentStock: newStock, averageCost: Number(newAvgCost.toFixed(4)), basePrice };
+                return {
+                    ...p,
+                    currentStock: Number(newStock.toFixed(4)),
+                    averageCost: Number(newAvgCost.toFixed(4)),
+                    basePrice: Number(Number(basePrice).toFixed(2))
+                };
             }
             return p;
         });
@@ -250,7 +307,7 @@ export default function BusinessModule({
                     current_stock: Number(prod.currentStock || 0),
                     average_cost: Number(prod.averageCost || 0),
                     base_price: Number(prod.basePrice || 0),
-                    min_stock: Number(prod.minStock || 0),
+                    min_stock_level: Number(prod.minStock || 0),
                     markup_percentage: Number(prod.markupPercentage || 0),
                     status: prod.status || 'active'
                 };
@@ -262,19 +319,89 @@ export default function BusinessModule({
         }
     }, [products, setProducts, bizProductionOrders, setBizProductionOrders, bizMovements, setBizMovements, addNotification]);
 
-    // ====== SALES & CONTACTS (Standard pass-through) ======
+    const handleDeleteOrder = useCallback(async (orderId) => {
+        const order = bizProductionOrders.find(o => o.id === orderId);
+        if (!order) return;
+
+        // Revertir Stock
+        const affectedMovements = bizMovements.filter(m => m.referenceId === orderId && (m.movementType === 'PRODUCCION_SALIDA' || m.movementType === 'PRODUCCION_ENTRADA'));
+
+        const nextProducts = products.map(p => {
+            const outMov = affectedMovements.find(m => m.productId === p.id && m.movementType === 'PRODUCCION_SALIDA');
+            const inMov = affectedMovements.find(m => m.productId === p.id && m.movementType === 'PRODUCCION_ENTRADA');
+
+            let stock = Number(p.currentStock || 0);
+            if (outMov) stock += Number(outMov.quantity); // Devolver MP
+            if (inMov) stock -= Number(inMov.quantity);  // Quitar PT
+
+            return { ...p, currentStock: stock };
+        });
+
+        const nextOrders = (bizProductionOrders || []).filter(o => o.id !== orderId);
+        const nextMovements = (bizMovements || []).filter(m => m.referenceId !== orderId || (m.movementType !== 'PRODUCCION_SALIDA' && m.movementType !== 'PRODUCCION_ENTRADA'));
+
+        setProducts(nextProducts);
+        setBizProductionOrders(nextOrders);
+        setBizMovements(nextMovements);
+
+        try {
+            await deleteFromSupabase('finanzas_biz_production_orders', 'finanzas_biz_prod_orders_local', orderId, nextOrders);
+            localStorage.setItem('finanzas_biz_movements_local', JSON.stringify(nextMovements));
+
+            await supabase.from('finanzas_biz_inventory_movements').delete().eq('reference_id', orderId).in('movement_type', ['PRODUCCION_SALIDA', 'PRODUCCION_ENTRADA']);
+
+            for (const prod of nextProducts.filter(p => affectedMovements.some(m => m.productId === p.id))) {
+                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', prod, nextProducts);
+            }
+            addNotification('Orden anulada y Stock revertido', 'info');
+        } catch (e) { addNotification('Anulado localmente', 'warning'); }
+    }, [products, setProducts, bizProductionOrders, setBizProductionOrders, bizMovements, setBizMovements, addNotification]);
+
+    // ====== SALES & CONTACTS ======
     const handleSaveSale = useCallback(async ({ sale, items, movements }) => {
-        const updatedProducts = products.map(p => {
+        const isUpdate = bizSales.some(s => s.id === sale.id);
+        const currentProducts = products || [];
+
+        // 0. Revertir stock si es actualización
+        let baseProducts = [...currentProducts];
+        if (isUpdate) {
+            const oldItems = bizSaleItems.filter(i => i.saleId === sale.id);
+            baseProducts = baseProducts.map(p => {
+                const old = oldItems.find(oi => oi.productId === p.id);
+                if (!old) return p;
+                return { ...p, currentStock: Number(p.currentStock || 0) + Number(old.quantity || 0) };
+            });
+        }
+
+        // 1. Aplicar nueva venta
+        const finalProducts = baseProducts.map(p => {
             const item = items.find(i => i.productId === p.id);
             if (!item) return p;
             return { ...p, currentStock: Number(p.currentStock || 0) - Number(item.quantity) };
         });
-        setProducts(updatedProducts);
-        const newMovements = [...(bizMovements || []), ...movements];
+
+        const newSales = isUpdate ? bizSales.map(s => s.id === sale.id ? sale : s) : [...(bizSales || []), sale];
+        const newItems = isUpdate ? [...(bizSaleItems || []).filter(i => i.saleId !== sale.id), ...items] : [...(bizSaleItems || []), ...items];
+        const newMovements = isUpdate ? [...(bizMovements || []).filter(m => m.referenceId !== sale.id || (m.referenceId === sale.id && m.referenceType !== 'sale')), ...movements] : [...(bizMovements || []), ...movements];
+
+        setProducts(finalProducts);
+        setBizSales(newSales);
+        setBizSaleItems(newItems);
         setBizMovements(newMovements);
+
         try {
+            if (isUpdate) {
+                await supabase.from('finanzas_biz_sale_items').delete().eq('sale_id', sale.id);
+                await supabase.from('finanzas_biz_inventory_movements').delete().eq('reference_id', sale.id).eq('reference_type', 'sale');
+            }
+
+            await saveToSupabase('finanzas_biz_sales', 'finanzas_biz_sales_local', sale, newSales);
+            for (const it of items) await saveToSupabase('finanzas_biz_sale_items', 'finanzas_biz_sale_items_local', it, newItems);
             for (const mov of movements) await saveToSupabase('finanzas_biz_inventory_movements', 'finanzas_biz_movements_local', mov, newMovements);
-            for (const prod of updatedProducts.filter(p => items.find(i => i.productId === p.id))) {
+
+            // Sync prods
+            const affected = finalProducts.filter(p => items.some(i => i.productId === p.id) || (isUpdate && oldItems.some(oi => oi.productId === p.id)));
+            for (const prod of affected) {
                 const sprod = {
                     id: prod.id,
                     sku: prod.sku,
@@ -284,24 +411,69 @@ export default function BusinessModule({
                     current_stock: Number(prod.currentStock || 0),
                     average_cost: Number(prod.averageCost || 0),
                     base_price: Number(prod.basePrice || 0),
-                    min_stock: Number(prod.minStock || 0),
+                    min_stock_level: Number(prod.minStock || 0),
                     markup_percentage: Number(prod.markupPercentage || 0),
                     status: prod.status || 'active'
                 };
-                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', sprod, updatedProducts);
+                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', sprod, finalProducts);
             }
-            addNotification('Venta registrada', 'success');
-        } catch (e) { addNotification('Venta local', 'warning'); }
-    }, [products, setProducts, bizMovements, setBizMovements, addNotification]);
+            addNotification(isUpdate ? 'Venta actualizada' : 'Venta registrada', 'success');
+        } catch (e) { addNotification('Sincronización pendiente', 'warning'); }
+    }, [products, setProducts, bizSales, setBizSales, bizSaleItems, setBizSaleItems, bizMovements, setBizMovements, addNotification]);
+
+    const handleDeleteSale = useCallback(async (id) => {
+        const sale = bizSales.find(s => s.id === id);
+        if (!sale) return;
+
+        const items = bizSaleItems.filter(i => i.saleId === id);
+
+        // Revertir Stock
+        const nextProducts = products.map(p => {
+            const item = items.find(i => i.productId === p.id);
+            if (!item) return p;
+            return { ...p, currentStock: Number(p.currentStock || 0) + Number(item.quantity) };
+        });
+
+        const nextSales = (bizSales || []).filter(s => s.id !== id);
+        const nextItems = (bizSaleItems || []).filter(i => i.saleId !== id);
+        const nextMovements = (bizMovements || []).filter(m => !(m.referenceId === id && m.referenceType === 'sale'));
+
+        setProducts(nextProducts);
+        setBizSales(nextSales);
+        setBizSaleItems(nextItems);
+        setBizMovements(nextMovements);
+
+        try {
+            await deleteFromSupabase('finanzas_biz_sales', 'finanzas_biz_sales_local', id, nextSales);
+            // Actualizar localmente items y movimientos también
+            localStorage.setItem('finanzas_biz_sale_items_local', JSON.stringify(nextItems));
+            localStorage.setItem('finanzas_biz_movements_local', JSON.stringify(nextMovements));
+
+            await supabase.from('finanzas_biz_sale_items').delete().eq('sale_id', id);
+            await supabase.from('finanzas_biz_inventory_movements').delete().eq('reference_id', id).eq('reference_type', 'sale');
+
+            for (const prod of nextProducts.filter(p => items.some(i => i.productId === p.id))) {
+                await saveToSupabase('finanzas_business_products', 'finanzas_biz_products', prod, nextProducts);
+            }
+            addNotification('Venta eliminada y Stock reintegrado', 'info');
+        } catch (e) { addNotification('Eliminado localmente', 'warning'); }
+    }, [products, setProducts, bizSales, setBizSales, bizSaleItems, setBizSaleItems, bizMovements, setBizMovements, addNotification]);
 
     const handleSaveRecipe = useCallback(async ({ recipe, items: rItems }) => {
-        const nextRecipes = bizRecipes.some(r => r.id === recipe.id) ? bizRecipes.map(r => r.id === recipe.id ? recipe : r) : [...bizRecipes, recipe];
+        const isUpdate = bizRecipes.some(r => r.id === recipe.id);
+        const nextRecipes = isUpdate ? bizRecipes.map(r => r.id === recipe.id ? recipe : r) : [...bizRecipes, recipe];
         const nextItems = [...(bizRecipeItems || []).filter(ri => ri.recipeId !== recipe.id), ...rItems];
         setBizRecipes(nextRecipes);
         setBizRecipeItems(nextItems);
-        await saveToSupabase('finanzas_biz_recipes', 'finanzas_biz_recipes_local', recipe, nextRecipes);
-        for (const ri of rItems) await saveToSupabase('finanzas_biz_recipe_items', 'finanzas_biz_recipe_items_local', ri, nextItems);
-        addNotification('Fórmula guardada', 'success');
+
+        try {
+            if (isUpdate) {
+                await supabase.from('finanzas_biz_recipe_items').delete().eq('recipe_id', recipe.id);
+            }
+            await saveToSupabase('finanzas_biz_recipes', 'finanzas_biz_recipes_local', recipe, nextRecipes);
+            for (const ri of rItems) await saveToSupabase('finanzas_biz_recipe_items', 'finanzas_biz_recipe_items_local', ri, nextItems);
+            addNotification('Fórmula guardada', 'success');
+        } catch (e) { addNotification('Error al sincronizar fórmula', 'warning'); }
     }, [bizRecipes, setBizRecipes, bizRecipeItems, setBizRecipeItems, addNotification]);
 
     const handleDeleteRecipe = useCallback(async (id) => {
@@ -326,7 +498,7 @@ export default function BusinessModule({
         addNotification('Eliminado', 'info');
     }, [contacts, setContacts, setBizSuppliers, addNotification]);
 
-    const activeTabConfig = TABS.find(t => t.id === activeTab);
+    const activeTabConfig = TABS.find(t => t.id === activeTab) || TABS[0];
 
     return (
         <div className="max-w-full min-h-screen bg-[#fcfdfe]">
@@ -365,7 +537,7 @@ export default function BusinessModule({
                     {/* Mobile nav indicator */}
                     <div className="lg:hidden flex items-center justify-between px-4 py-2">
                         <div className="flex items-center gap-3">
-                            <span className="p-2 bg-slate-100 rounded-xl text-slate-800"><activeTabConfig.Icon size={20} /></span>
+                            <span className="p-2 bg-slate-100 rounded-xl text-slate-800">{activeTabConfig?.Icon && <activeTabConfig.Icon size={20} />}</span>
                             <span className="font-black text-slate-800 uppercase tracking-widest text-sm">{activeTabConfig?.label}</span>
                         </div>
                         <button onClick={() => setMobileTabOpen(!mobileTabOpen)} className="p-3 rounded-2xl bg-slate-900 text-white shadow-lg">
@@ -393,39 +565,47 @@ export default function BusinessModule({
                         products={products} purchases={bizPurchases}
                         purchaseItems={bizPurchaseItems} productions={bizProductionOrders}
                         movements={bizMovements} contacts={contacts}
+                        sales={bizSales}
                     />
                 )}
-                {activeTab === 'inventory' && (
-                    <InventoryHub
+                {activeTab === 'catalog' && (
+                    <CatalogModule
+                        products={products}
+                        recipes={bizRecipes}
+                        recipeItems={bizRecipeItems}
+                        onSaveProduct={handleSaveProduct}
+                        onDeleteProduct={handleDeleteProduct}
+                        onSaveRecipe={handleSaveRecipe}
+                        onDeleteRecipe={handleDeleteRecipe}
+                    />
+                )}
+                {activeTab === 'purchases' && (
+                    <PurchaseModule
                         products={products}
                         suppliers={bizSuppliers}
                         purchases={bizPurchases}
                         purchaseItems={bizPurchaseItems}
-                        onSaveProduct={handleSaveProduct}
-                        onDeleteProduct={handleDeleteProduct}
                         onSavePurchase={handleSavePurchase}
-                        // Added finance context
-                        accounts={accounts}
+                        onDeletePurchase={handleDeletePurchase}
                     />
                 )}
-                {activeTab === 'recipes' && (
-                    <RecipeManager
-                        products={products} recipes={bizRecipes}
-                        recipeItems={bizRecipeItems}
-                        onSaveRecipe={handleSaveRecipe} onDeleteRecipe={handleDeleteRecipe}
-                    />
-                )}
+
                 {activeTab === 'production' && (
                     <ProductionOrders
                         products={products} recipes={bizRecipes}
                         recipeItems={bizRecipeItems} productionOrders={bizProductionOrders}
                         onSaveOrder={handleSaveOrder}
+                        onDeleteOrder={handleDeleteOrder}
                     />
                 )}
                 {activeTab === 'sales' && (
                     <SalesModule
-                        products={products} contacts={contacts}
+                        products={products}
+                        contacts={contacts}
+                        sales={bizSales}
+                        saleItems={bizSaleItems}
                         onSaveSale={handleSaveSale}
+                        onDeleteSale={handleDeleteSale}
                     />
                 )}
                 {activeTab === 'kardex' && (

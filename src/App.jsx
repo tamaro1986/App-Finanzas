@@ -55,6 +55,8 @@ function App() {
     const [bizSuppliers, setBizSuppliers] = useState([])
     const [bizPurchases, setBizPurchases] = useState([])
     const [bizPurchaseItems, setBizPurchaseItems] = useState([])
+    const [bizSales, setBizSales] = useState([])
+    const [bizSaleItems, setBizSaleItems] = useState([])
     const [bizRecipes, setBizRecipes] = useState([])
     const [bizRecipeItems, setBizRecipeItems] = useState([])
     const [bizProductionOrders, setBizProductionOrders] = useState([])
@@ -100,6 +102,8 @@ function App() {
                 setBizSuppliers([])
                 setBizPurchases([])
                 setBizPurchaseItems([])
+                setBizSales([])
+                setBizSaleItems([])
                 setBizRecipes([])
                 setBizRecipeItems([])
                 setBizProductionOrders([])
@@ -115,7 +119,7 @@ function App() {
             const { initializeData } = await import('./lib/supabaseSync')
 
             const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData, bizProdData,
-                bizSuppliersData, bizPurchasesData, bizPurchaseItemsData, bizRecipesData, bizRecipeItemsData, bizProdOrdersData, bizMovData] = await Promise.all([
+                bizSuppliersData, bizPurchasesData, bizPurchaseItemsData, bizSalesData, bizSaleItemsData, bizRecipesData, bizRecipeItemsData, bizProdOrdersData, bizMovData] = await Promise.all([
                     initializeData('transactions', 'finanzas_transactions'),
                     initializeData('accounts', 'finanzas_accounts'),
                     initializeData('budgets', 'finanzas_budgets'),
@@ -132,6 +136,8 @@ function App() {
                     initializeData('finanzas_biz_suppliers', 'finanzas_biz_suppliers_local'),
                     initializeData('finanzas_biz_purchases', 'finanzas_biz_purchases_local'),
                     initializeData('finanzas_biz_purchase_items', 'finanzas_biz_purchase_items_local'),
+                    initializeData('finanzas_biz_sales', 'finanzas_biz_sales_local'),
+                    initializeData('finanzas_biz_sale_items', 'finanzas_biz_sale_items_local'),
                     initializeData('finanzas_biz_recipes', 'finanzas_biz_recipes_local'),
                     initializeData('finanzas_biz_recipe_items', 'finanzas_biz_recipe_items_local'),
                     initializeData('finanzas_biz_production_orders', 'finanzas_biz_prod_orders_local'),
@@ -166,6 +172,8 @@ function App() {
             setBizSuppliers(bizSuppliersData || [])
             setBizPurchases(bizPurchasesData || [])
             setBizPurchaseItems(bizPurchaseItemsData || [])
+            setBizSales(bizSalesData || [])
+            setBizSaleItems(bizSaleItemsData || [])
             setBizRecipes(bizRecipesData || [])
             setBizRecipeItems(bizRecipeItemsData || [])
             setBizProductionOrders(bizProdOrdersData || [])
@@ -299,6 +307,10 @@ function App() {
                         setBizPurchases={setBizPurchases}
                         bizPurchaseItems={bizPurchaseItems}
                         setBizPurchaseItems={setBizPurchaseItems}
+                        bizSales={bizSales}
+                        setBizSales={setBizSales}
+                        bizSaleItems={bizSaleItems}
+                        setBizSaleItems={setBizSaleItems}
                         bizRecipes={bizRecipes}
                         setBizRecipes={setBizRecipes}
                         bizRecipeItems={bizRecipeItems}
@@ -344,9 +356,13 @@ function App() {
     return (
         <SyncNotificationProvider>
             <div className="flex h-screen bg-[#f9fafb] overflow-hidden font-sans">
-                {/* Indicador de Sincronización (Fijo en la parte superior derecha) */}
-                <div className="fixed top-4 right-4 z-[9999] pointer-events-none">
+                <div className="fixed top-4 right-4 z-[9999] pointer-events-none flex flex-col items-end gap-2">
                     <SyncStatusIndicator />
+                    {window.location.hostname === 'localhost' && (
+                        <div className="bg-emerald-500 text-[#0f172a] px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg border border-emerald-400/50 pointer-events-auto">
+                            Ambiente de Pruebas: Auto-Save Navegador
+                        </div>
+                    )}
                 </div>
                 {/* Mobile Header */}
                 <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-emerald-200/60 flex items-center justify-between px-6 z-50 transition-all duration-300" style={{ paddingTop: 'env(safe-area-inset-top)', height: 'calc(4rem + env(safe-area-inset-top))' }}>

@@ -16,18 +16,17 @@ function KPICard({ title, value, subtitle, icon: Icon, color, bg }) {
     );
 }
 
-export default function DashboardERP({ products, purchases, purchaseItems, productions, movements, contacts }) {
+export default function DashboardERP({ products, purchases, purchaseItems, productions, movements, contacts, sales = [] }) {
     const fmt = (n) => `$${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const kpis = useMemo(() => {
         const inventoryValue = products.reduce((sum, p) => sum + (Number(p.currentStock || 0) * Number(p.averageCost || 0)), 0);
         const totalPurchased = purchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
-        const salesMovements = movements.filter(m => m.movementType === 'VENTA');
-        const totalSoldQty = salesMovements.reduce((sum, m) => sum + Number(m.quantity || 0), 0);
+        const totalSalesValue = sales.reduce((sum, s) => sum + Number(s.total || 0), 0);
         const activeProductions = productions.filter(p => p.status === 'pendiente' || p.status === 'en_proceso').length;
         const lowStockProducts = products.filter(p => Number(p.currentStock) <= Number(p.minStock || 0));
-        return { inventoryValue, totalPurchased, totalSoldQty, activeProductions, lowStockProducts };
-    }, [products, purchases, movements, productions]);
+        return { inventoryValue, totalPurchased, totalSalesValue, activeProductions, lowStockProducts };
+    }, [products, purchases, movements, productions, sales]);
 
     const recentMovements = useMemo(() => [...movements]
         .sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date))
@@ -47,7 +46,7 @@ export default function DashboardERP({ products, purchases, purchaseItems, produ
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <KPICard title="Valor Inventario" value={fmt(kpis.inventoryValue)} icon={Package} color="text-blue-600" bg="bg-blue-100" />
                 <KPICard title="Total Comprado" value={fmt(kpis.totalPurchased)} icon={ShoppingCart} color="text-amber-600" bg="bg-amber-100" />
-                <KPICard title="Órdenes Activas" value={kpis.activeProductions} subtitle="Pendientes / En proceso" icon={Factory} color="text-violet-600" bg="bg-violet-100" />
+                <KPICard title="Total Ventas" value={fmt(kpis.totalSalesValue)} icon={TrendingUp} color="text-emerald-600" bg="bg-emerald-100" />
                 <KPICard title="Bajo Stock" value={kpis.lowStockProducts.length} subtitle="Productos con alerta" icon={AlertTriangle} color="text-rose-600" bg="bg-rose-100" />
             </div>
 
