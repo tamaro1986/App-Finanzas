@@ -30,7 +30,7 @@ const StatCard = ({ title, amount, icon: Icon, colorClass, trend }) => (
     </div>
 )
 
-const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
+const Dashboard = ({ transactions = [], accounts = [], setActiveView, budgets = {} }) => {
     // Estado para período seleccionado
     const [selectedPeriod, setSelectedPeriod] = useState(format(new Date(), 'yyyy-MM'))
 
@@ -54,9 +54,38 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
         .filter(t => t.type === 'income' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer')
         .reduce((sum, t) => sum + t.amount, 0)
 
-    // Calcular gastos del período seleccionado (excluyendo transferencias)
+    // Período de presupuesto actual
+    const monthBudget = budgets[selectedPeriod] || []
+
+    // Calcular gastos del período seleccionado (excluyendo transferencias y metas de ahorro)
     const expense = transactions
-        .filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod) && !t.isTransfer && t.categoryId !== 'transfer')
+        .filter(t => t.type === 'expense' && t.date.startsWith(selectedPeriod))
+        .filter(t => {
+            if (t.isTransfer || t.categoryId === 'transfer') return false
+            
+            // Check if it's a savings category in budget
+            const budgetCat = monthBudget.find(c => c.id === t.categoryId || c.name === t.categoryId)
+            if (budgetCat && budgetCat.targetAccountId) return false // Is saving/allocation
+            
+            return true
+        })
+        .reduce((sum, t) => sum + t.amount, 0)
+
+    // Calcular ahorro (transferencias a cuentas destino de presupuesto o gastos marcados como ahorro)
+    const savings = transactions
+        .filter(t => t.date.startsWith(selectedPeriod))
+        .filter(t => {
+            // Check against budget categories with targetAccountId
+            const budgetCat = monthBudget.find(c => {
+                // Direct match by ID/Name
+                if (c.id === t.categoryId || c.name === t.categoryId) return true
+                // Match by target account for transfers
+                if (c.targetAccountId && t.isTransfer && t.type === 'expense' && t.toAccountId === c.targetAccountId) return true
+                return false
+            })
+            
+            return budgetCat && budgetCat.targetAccountId
+        })
         .reduce((sum, t) => sum + t.amount, 0)
 
     // Calcular saldos por categorías para liquidez
@@ -88,6 +117,7 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
         debts: debtsBreakdown,
         income,
         expense,
+        savings,
         recentTransactions
     }
     const todayStr = format(new Date(), "EEEE, d 'de' MMMM yyyy", { locale: es })
@@ -128,9 +158,9 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
             </header>
 
             {/* Widgets Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
                 {/* Patrimonio Neto / Balance Card - Toma 2 columnas en desktop y tablet */}
-                <div className="md:col-span-2 card bg-white border-slate-200 overflow-hidden relative group shadow-sm hover:shadow-md transition-all">
+                <div className="sm:col-span-2 lg:col-span-2 card bg-white border-slate-200 overflow-hidden relative group shadow-sm hover:shadow-md transition-all">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700" />
 
                     <div className="relative p-6">
@@ -154,7 +184,7 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
                                 <p className="text-sm font-black text-slate-800 italic">
                                     ${stats.debts.short.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                 </p>
-                                <p className="text-[8px] text-slate-400 font-bold mt-1 uppercase">Vence ≤ 1 año</p>
+                                <p className="text-[8px] text-slate-400 font-bold mt-1 uppercase">Vence &lt; 12 meses</p>
                             </div>
                             <div className="p-4 bg-slate-50/50 rounded-2xl border border-slate-100 group/item hover:bg-slate-50 hover:border-blue-100 transition-all">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
@@ -189,6 +219,12 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView }) => {
                     amount={stats.expense}
                     icon={TrendingDown}
                     colorClass="bg-rose-600 text-rose-600"
+                />
+                <StatCard
+                    title={`Ahorro de ${format(parseISO(selectedPeriod + '-01'), 'MMMM', { locale: es })}`}
+                    amount={stats.savings}
+                    icon={TrendingUp}
+                    colorClass="bg-blue-600 text-blue-600"
                 />
             </div>
 

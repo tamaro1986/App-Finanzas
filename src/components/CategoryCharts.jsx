@@ -112,33 +112,54 @@ const DonutChart = ({ data, total, title, colorScheme = 'blue', onCategoryClick 
     );
 };
 
-const CategoryCharts = ({ transactions }) => {
+const CategoryCharts = ({ transactions, budgets = {} }) => {
     const [currentPeriod, setCurrentPeriod] = useState(format(new Date(), 'yyyy-MM'))
     const [viewType, setViewType] = useState('donut') // 'donut' or 'bars'
     const [selectedCategory, setSelectedCategory] = useState(null) // { name, type }
 
     // 1. Obtener datos procesados para el mes seleccionado
     const data = useMemo(() => {
-        const periodTransactions = transactions.filter(t =>
-            t.date.startsWith(currentPeriod) && !t.isTransfer && t.categoryId !== 'transfer'
-        );
+        const monthBudget = budgets[currentPeriod] || [];
 
         const incomeMap = {};
         const expenseMap = {};
+        const savingsMap = {};
         let totalIncome = 0;
         let totalExpense = 0;
+        let totalSavings = 0;
 
-        periodTransactions.forEach(t => {
+        transactions.forEach(t => {
+            if (!t.date.startsWith(currentPeriod)) return;
+
+            // Direct match by category
+            let budgetCat = monthBudget.find(c => c.id === t.categoryId || c.name === t.categoryId);
+            
+            // Match by target account for transfers
+            if (!budgetCat && t.isTransfer && t.type === 'expense' && t.toAccountId) {
+                budgetCat = monthBudget.find(c => c.targetAccountId === t.toAccountId);
+            }
+
             const amount = parseFloat(t.amount) || 0;
+            const isSaving = budgetCat && budgetCat.targetAccountId;
+            
+            // Se excluyen transferencias internas que NO son ahorros presupuestados
+            if (t.isTransfer && !isSaving) return;
+            if (t.categoryId === 'transfer' && !isSaving) return;
+
             const category = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId);
-            const catName = t.categoryName || category?.name || 'Otros';
+            const catName = budgetCat?.name || t.categoryName || category?.name || 'Otros';
 
             if (t.type === 'income') {
                 incomeMap[catName] = (incomeMap[catName] || 0) + amount;
                 totalIncome += amount;
             } else {
-                expenseMap[catName] = (expenseMap[catName] || 0) + amount;
-                totalExpense += amount;
+                if (isSaving) {
+                    savingsMap[catName] = (savingsMap[catName] || 0) + amount;
+                    totalSavings += amount;
+                } else {
+                    expenseMap[catName] = (expenseMap[catName] || 0) + amount;
+                    totalExpense += amount;
+                }
             }
         });
 
@@ -150,8 +171,12 @@ const CategoryCharts = ({ transactions }) => {
             .map(([name, amount]) => ({ name, amount }))
             .sort((a, b) => b.amount - a.amount);
 
-        return { incomeData, expenseData, totalIncome, totalExpense };
-    }, [transactions, currentPeriod]);
+        const savingsData = Object.entries(savingsMap)
+            .map(([name, amount]) => ({ name, amount }))
+            .sort((a, b) => b.amount - a.amount);
+
+        return { incomeData, expenseData, savingsData, totalIncome, totalExpense, totalSavings };
+    }, [transactions, currentPeriod, budgets]);
 
     // Filtrar transacciones para el modal de detalle
     const selectedTransactions = useMemo(() => {
@@ -208,8 +233,9 @@ const CategoryCharts = ({ transactions }) => {
             </div>
 
             {/* Grid de Gráficos */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className={`grid grid-cols-1 ${data.totalSavings > 0 ? 'xl:grid-cols-3' : 'lg:grid-cols-2'} gap-8`}>
                 {/* Gráfico de Ingresos */}
+                {/* ... existing income card ... */}
                 <div className="card bg-white border-none shadow-xl shadow-slate-200/40 p-10 group overflow-hidden relative">
                     <div className="absolute -right-10 -top-10 w-40 h-40 bg-emerald-50 rounded-full blur-3xl opacity-50 group-hover:scale-150 transition-transform duration-1000" />
                     <div className="relative z-10">
@@ -348,6 +374,71 @@ const CategoryCharts = ({ transactions }) => {
                         )}
                     </div>
                 </div>
+
+                {/* Gráfico de Ahorro */}
+                {data.totalSavings > 0 && (
+                    <div className="card bg-white border-none shadow-xl shadow-slate-200/40 p-10 group overflow-hidden relative">
+                        <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-50 rounded-full blur-3xl opacity-50 group-hover:scale-150 transition-transform duration-1000" />
+                        <div className="relative z-10">
+                            <div className="flex items-center justify-between mb-10">
+                                <h3 className="font-black text-slate-900 italic uppercase tracking-tight flex items-center gap-2">
+                                    <TrendingUp className="text-blue-500" size={20} /> Ahorro por Categoría
+                                </h3>
+                                <button onClick={() => setViewType(viewType === 'donut' ? 'bars' : 'donut')} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all">
+                                    {viewType === 'donut' ? <BarChart3 size={18} /> : <LayoutGrid size={18} />}
+                                </button>
+                            </div>
+
+                            <AnimatePresence mode="wait">
+                                {viewType === 'donut' ? (
+                                    <motion.div
+                                        key="donut-savings"
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.9 }}
+                                    >
+                                        <DonutChart
+                                            data={data.savingsData}
+                                            total={data.totalSavings}
+                                            title="Ahorro"
+                                            colorScheme="blue"
+                                            onCategoryClick={(name) => setSelectedCategory({ name, type: 'expense' })}
+                                        />
+                                    </motion.div>
+                                ) : (
+                                    <motion.div
+                                        key="bars-savings"
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: 20 }}
+                                        className="space-y-6 pt-4"
+                                    >
+                                        {data.savingsData.map((item, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => setSelectedCategory({ name: item.name, type: 'expense' })}
+                                                className="w-full text-left space-y-2 group/bar hover:bg-slate-50 p-2 rounded-xl transition-all"
+                                            >
+                                                <div className="flex justify-between items-end">
+                                                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest group-hover/bar:text-blue-600 transition-colors">{item.name}</span>
+                                                    <span className="text-xs font-black text-slate-900">${item.amount.toLocaleString()}</span>
+                                                </div>
+                                                <div className="h-2.5 bg-slate-50 rounded-full overflow-hidden border border-slate-100 shadow-inner">
+                                                    <motion.div
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: `${(item.amount / data.totalSavings) * 100}%` }}
+                                                        className="h-full bg-blue-500 rounded-full"
+                                                        transition={{ duration: 1, ease: "circOut" }}
+                                                    />
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Comparativa de Balance */}

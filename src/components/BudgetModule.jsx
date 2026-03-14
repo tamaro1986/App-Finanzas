@@ -379,55 +379,79 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
         const monthlyStats = {}
         const yearlyStats = {}
 
-        // Process Budgets
+        // Initialize periods and years from budgets
         Object.entries(budgets).forEach(([period, categories]) => {
             const year = period.substring(0, 4)
-            if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
-            if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
+            if (!monthlyStats[period]) monthlyStats[period] = { 
+                budgeted: 0, executed: 0, 
+                budgetedSavings: 0, executedSavings: 0,
+                incomeReal: 0
+            }
+            if (!yearlyStats[year]) yearlyStats[year] = { 
+                budgeted: 0, executed: 0, 
+                budgetedSavings: 0, executedSavings: 0,
+                incomeReal: 0
+            }
 
-            // Validar que categories sea un array antes de iterar
             if (Array.isArray(categories)) {
                 categories.forEach(cat => {
+                    const amount = parseFloat(cat.projected) || 0
                     if (cat.type === 'expense') {
+                        const isSaving = !!cat.targetAccountId
                         if (selectedCategoryFilter === 'All' || cat.name === selectedCategoryFilter) {
-                            monthlyStats[period].budgeted += parseFloat(cat.projected) || 0
-                            yearlyStats[year].budgeted += parseFloat(cat.projected) || 0
+                            if (isSaving) {
+                                monthlyStats[period].budgetedSavings += amount
+                                yearlyStats[year].budgetedSavings += amount
+                            } else {
+                                monthlyStats[period].budgeted += amount
+                                yearlyStats[year].budgeted += amount
+                            }
                         }
                     }
                 })
             }
         })
 
-        // Process Transactions - Relacionar por categoryId o nombre de categoría
+        // Process Transactions
         transactions.forEach(t => {
             const period = t.date.substring(0, 7)
             const year = t.date.substring(0, 4)
 
-            // 1. Buscar coincidencia por categoría directa
+            if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0, budgetedSavings: 0, executedSavings: 0, incomeReal: 0 }
+            if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0, budgetedSavings: 0, executedSavings: 0, incomeReal: 0 }
+
+            if (t.type === 'income' && !t.isTransfer) {
+                monthlyStats[period].incomeReal += t.amount || 0
+                yearlyStats[year].incomeReal += t.amount || 0
+            }
+
+            // 1. Match by direct category
             let budgetCat = (budgets[period] || []).find(c => c.id === t.categoryId || c.name === t.categoryId)
 
-            // 2. Si es transferencia y no tiene categoría, buscar por cuenta destino (Ahorro/Abono)
+            // 2. If transfer and no direct cat, look for target account (Saving/Allocation)
             if (!budgetCat && t.isTransfer && t.type === 'expense' && t.toAccountId) {
                 budgetCat = (budgets[period] || []).find(c => c.targetAccountId === t.toAccountId)
             }
 
-            if (budgetCat && budgetCat.type === t.type) {
+            if (budgetCat && budgetCat.type === 'expense') {
                 const categoryName = budgetCat.name
+                const isSaving = !!budgetCat.targetAccountId
 
                 if (selectedCategoryFilter === 'All' || categoryName === selectedCategoryFilter) {
-                    if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
-                    if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
-                    monthlyStats[period].executed += t.amount || 0
-                    yearlyStats[year].executed += t.amount || 0
+                    if (isSaving) {
+                        monthlyStats[period].executedSavings += t.amount || 0
+                        yearlyStats[year].executedSavings += t.amount || 0
+                    } else {
+                        monthlyStats[period].executed += t.amount || 0
+                        yearlyStats[year].executed += t.amount || 0
+                    }
                 }
             } else if (t.type === 'expense' && !t.isTransfer) {
-                // Fallback para transacciones sin presupuesto pero que son gastos directos
-                const defaultCat = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                // Fallback for transactions without budget but that are direct expenses
+                const defaultCat = [...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
                 const categoryName = defaultCat?.name || 'Otros'
 
                 if (selectedCategoryFilter === 'All' || categoryName === selectedCategoryFilter) {
-                    if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
-                    if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
                     monthlyStats[period].executed += t.amount || 0
                     yearlyStats[year].executed += t.amount || 0
                 }
@@ -448,21 +472,29 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
             executed: stats.monthlyStats[p].executed
         }))
 
-    const totalProjected = currentMonthBudgets.reduce((sum, c) => sum + (c.type === 'expense' ? (parseFloat(c.projected) || 0) : 0), 0)
-    const totalExecuted = transactions
-        .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense')
+    // Separar categorías por propósito
+    const expenseCategories = currentMonthBudgets.filter(c => c.type === 'expense' && !c.targetAccountId)
+    const savingsCategories = currentMonthBudgets.filter(c => c.type === 'expense' && c.targetAccountId)
+
+    const totalProjectedExpenses = expenseCategories.reduce((sum, c) => sum + (parseFloat(c.projected) || 0), 0)
+    const totalProjectedSavings = savingsCategories.reduce((sum, c) => sum + (parseFloat(c.projected) || 0), 0)
+
+    // Cálculo de ejecución real de GASTOS (No ahorros)
+    const totalExecutedExpenses = transactions
+        .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense' && !t.isTransfer)
+        .reduce((sum, t) => sum + t.amount, 0)
+
+    // Cálculo de ejecución real de AHORROS (Solo transferencias a cuentas objetivo)
+    const totalExecutedSavings = transactions
+        .filter(t => t.date.startsWith(currentPeriod) && t.isTransfer && t.type === 'expense' && t.toAccountId)
         .reduce((sum, t) => {
-            // Caso 1: Gasto directo (no transferencia)
-            if (!t.isTransfer && t.categoryId !== 'transfer') return sum + t.amount
-            
-            // Caso 2: Transferencia a una cuenta que es objetivo de presupuesto (Ahorro/Préstamo)
-            if (t.isTransfer && t.toAccountId) {
-                const isTarget = currentMonthBudgets.some(c => c.targetAccountId === t.toAccountId)
-                if (isTarget) return sum + t.amount
-            }
-            
-            return sum
+            const isTarget = savingsCategories.some(c => c.targetAccountId === t.toAccountId)
+            return isTarget ? sum + t.amount : sum
         }, 0)
+
+    const totalProjectedFlow = totalProjectedExpenses + totalProjectedSavings
+    const totalExecutedFlow = totalExecutedExpenses + totalExecutedSavings
+    const netAvailable = totalProjectedFlow - totalExecutedFlow
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -542,31 +574,37 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
             {activeTab === 'config' ? (
                 <div className="space-y-8 animate-in fade-in duration-500">
                     {/* Summary Stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="card border-none shadow-sm bg-blue-600 text-white group overflow-hidden relative">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="card border-none shadow-sm bg-slate-900 text-white group overflow-hidden relative">
                             <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
-                            <p className="text-blue-100 text-[10px] font-bold uppercase tracking-[0.2em] mb-1 relative z-10 italic">Límite Proyectado</p>
+                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-1 relative z-10 italic">Global Proyectado</p>
                             <div className="flex items-baseline gap-1 relative z-10">
-                                <span className="text-4xl font-black italic tracking-tighter">${totalProjected.toLocaleString()}</span>
-                                <span className="text-[10px] font-bold text-blue-200 uppercase">USD</span>
+                                <span className="text-3xl font-black italic tracking-tighter">${totalProjectedFlow.toLocaleString()}</span>
                             </div>
                         </div>
-                        <div className="card border-none shadow-sm bg-white">
-                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Gasto Real</p>
+                        <div className="card border-none shadow-sm bg-white border-l-4 border-rose-500">
+                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Gasto Consumo</p>
                             <div className="flex items-baseline gap-1">
-                                <span className="text-3xl font-black text-slate-900">${totalExecuted.toLocaleString()}</span>
-                                <span className="text-[10px] font-bold text-slate-400">USD</span>
+                                <span className="text-2xl font-black text-rose-600">${totalExecutedExpenses.toLocaleString()}</span>
+                                <span className="text-[10px] font-bold text-slate-400">/ ${totalProjectedExpenses.toLocaleString()}</span>
                             </div>
                         </div>
-                        <div className="card border-none shadow-sm bg-white flex items-center justify-between pr-8">
+                        <div className="card border-none shadow-sm bg-white border-l-4 border-emerald-500">
+                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Ahorro / Inversión</p>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-black text-emerald-600">${totalExecutedSavings.toLocaleString()}</span>
+                                <span className="text-[10px] font-bold text-slate-400">/ ${totalProjectedSavings.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div className="card border-none shadow-sm bg-white flex items-center justify-between pr-8 border-l-4 border-blue-500">
                             <div>
-                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Disponible</p>
-                                <p className={`text-2xl font-black ${(totalProjected - totalExecuted) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    ${(totalProjected - totalExecuted).toLocaleString()}
+                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-1">Remanente Final</p>
+                                <p className={`text-2xl font-black ${netAvailable >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                    ${netAvailable.toLocaleString()}
                                 </p>
                             </div>
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shadow-inner ${totalProjected > 0 ? (totalExecuted / totalProjected > 1 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600') : 'bg-slate-50 text-slate-300'}`}>
-                                {totalProjected > 0 ? ((totalExecuted / totalProjected) * 100).toFixed(0) : 0}%
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shadow-inner ${totalProjectedFlow > 0 ? (totalExecutedFlow / totalProjectedFlow > 1 ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600') : 'bg-slate-50 text-slate-300'}`}>
+                                {totalProjectedFlow > 0 ? ((totalExecutedFlow / totalProjectedFlow) * 100).toFixed(0) : 0}%
                             </div>
                         </div>
                     </div>
@@ -612,7 +650,8 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                     ) : (
                                         (() => {
                                             const incomeCats = currentMonthBudgets.filter(c => c.type === 'income')
-                                            const expenseCats = currentMonthBudgets.filter(c => c.type === 'expense')
+                                            const regularExpenseCats = currentMonthBudgets.filter(c => c.type === 'expense' && !c.targetAccountId)
+                                            const savingsGoalCats = currentMonthBudgets.filter(c => c.type === 'expense' && c.targetAccountId)
 
                                             const renderCategoryRow = (cat) => {
                                                 const executed = transactions
@@ -663,7 +702,6 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
 
                                                                         const periods = Object.keys(updatedBudgets)
                                                                         periods.forEach(period => {
-                                                                            // Si autoPropagate está activo, actualiza este mes y futuros. Si no, solo este mes.
                                                                             if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
                                                                                 updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
                                                                                     (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
@@ -754,7 +792,8 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                             }
 
                                             const incomeTotals = calculateTypeAmounts(incomeCats)
-                                            const expenseTotals = calculateTypeAmounts(expenseCats)
+                                            const expenseTotals = calculateTypeAmounts(regularExpenseCats)
+                                            const savingsTotals = calculateTypeAmounts(savingsGoalCats)
 
                                             return (
                                                 <>
@@ -762,22 +801,34 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                     {incomeCats.length > 0 && (
                                                         <>
                                                             <tr className="bg-emerald-50/30">
-                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] italic">Sección de Ingresos</td>
+                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] italic">Ingresos Planificados</td>
                                                             </tr>
                                                             {incomeCats.map(renderCategoryRow)}
-                                                            {renderSubtotalRow('Total Ingresos', incomeTotals.proj, incomeTotals.exec, 'text-emerald-700 bg-emerald-50/50')}
+                                                            {renderSubtotalRow('Subtotal Ingresos', incomeTotals.proj, incomeTotals.exec, 'text-emerald-700 bg-emerald-50/50')}
                                                             <tr className="h-6"></tr>
                                                         </>
                                                     )}
 
-                                                    {/* SECCIÓN GASTOS */}
-                                                    {expenseCats.length > 0 && (
+                                                    {/* SECCIÓN GASTOS DE CONSUMO */}
+                                                    {regularExpenseCats.length > 0 && (
                                                         <>
                                                             <tr className="bg-rose-50/30">
-                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-rose-600 uppercase tracking-[0.2em] italic">Sección de Gastos</td>
+                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-rose-600 uppercase tracking-[0.2em] italic">Gastos de Consumo (Variables/Fijos)</td>
                                                             </tr>
-                                                            {expenseCats.map(renderCategoryRow)}
-                                                            {renderSubtotalRow('Total Gastos', expenseTotals.proj, expenseTotals.exec, 'text-rose-700 bg-rose-50/50')}
+                                                            {regularExpenseCats.map(renderCategoryRow)}
+                                                            {renderSubtotalRow('Subtotal Gastos', expenseTotals.proj, expenseTotals.exec, 'text-rose-700 bg-rose-50/50')}
+                                                            <tr className="h-6"></tr>
+                                                        </>
+                                                    )}
+
+                                                    {/* SECCIÓN METAS DE AHORRO / ACUMULACIÓN */}
+                                                    {savingsGoalCats.length > 0 && (
+                                                        <>
+                                                            <tr className="bg-blue-50/30">
+                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] italic">Metas de Ahorro e Inversión</td>
+                                                            </tr>
+                                                            {savingsGoalCats.map(renderCategoryRow)}
+                                                            {renderSubtotalRow('Total Acumulado', savingsTotals.proj, savingsTotals.exec, 'text-blue-700 bg-blue-50/50')}
                                                         </>
                                                     )}
                                                 </>
@@ -820,14 +871,25 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                 </div>
                             </div>
 
-                            {/* Yearly Quick Badge */}
+                            {/* Total Spent Quick Badge */}
+                            <div className="card bg-slate-100 border-none shadow-md">
+                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-4">Gasto Promedio Mensual</p>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-3xl font-black text-slate-800">
+                                        ${(Object.values(stats.monthlyStats).reduce((sum, s) => sum + s.executed, 0) / Math.max(1, Object.keys(stats.monthlyStats).length)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </h4>
+                                    <TrendingDown className="text-rose-500" size={32} />
+                                </div>
+                            </div>
+
+                            {/* Yearly Savings Quick Badge */}
                             <div className="card bg-slate-900 text-white border-none shadow-lg">
-                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">Ahorro Promedio Mensual</p>
+                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">Acumulado en Metas (Total)</p>
                                 <div className="flex items-center justify-between">
                                     <h4 className="text-3xl font-black text-emerald-400">
-                                        +{(Object.values(stats.monthlyStats).reduce((sum, s) => sum + (s.budgeted - s.executed), 0) / Math.max(1, Object.keys(stats.monthlyStats).length)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                        ${Object.values(stats.monthlyStats).reduce((sum, s) => sum + s.executedSavings, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                     </h4>
-                                    <ArrowUpRight className="text-emerald-500" size={32} />
+                                    <TrendingUp className="text-emerald-500" size={32} />
                                 </div>
                             </div>
                         </div>
@@ -862,9 +924,9 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                     <thead>
                                         <tr className="bg-slate-50/50">
                                             <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mes</th>
-                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Presupuesto</th>
-                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real</th>
-                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ahorro / Variación</th>
+                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gastos (Real)</th>
+                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Metas (Ahorro)</th>
+                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Var. Presupuesto</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -882,8 +944,8 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                             <td className="px-8 py-5 font-black text-slate-800 capitalize italic">
                                                                 {format(parseISO(period + '-01'), 'MMMM yyyy', { locale: es })}
                                                             </td>
-                                                            <td className="px-8 py-5 text-right font-bold text-slate-500">${s.budgeted.toLocaleString()}</td>
                                                             <td className="px-8 py-5 text-right font-black text-slate-900">${s.executed.toLocaleString()}</td>
+                                                            <td className="px-8 py-5 text-right font-black text-blue-600">${s.executedSavings.toLocaleString()}</td>
                                                             <td className={`px-8 py-5 text-right font-black ${diff >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                                                 <div className="flex items-center justify-end gap-1">
                                                                     {diff >= 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}

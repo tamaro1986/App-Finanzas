@@ -230,9 +230,9 @@ function App() {
     const renderView = () => {
         switch (activeView) {
             case 'dashboard':
-                return <Dashboard transactions={transactions} accounts={accounts} setActiveView={setActiveView} />
+                return <Dashboard transactions={transactions} accounts={accounts} setActiveView={setActiveView} budgets={budgets || {}} />
             case 'analytics':
-                return <CategoryCharts transactions={transactions} />
+                return <CategoryCharts transactions={transactions} budgets={budgets || {}} />
             case 'budget':
                 return (
                     <BudgetModule
