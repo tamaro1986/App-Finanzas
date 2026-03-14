@@ -696,11 +696,23 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                                 <div className="flex flex-col">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
-                                                                        {cat.oneMonthOnly && (
-                                                                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 text-[8px] font-black uppercase tracking-tighter rounded border border-amber-100 flex items-center gap-1">
-                                                                                <Calendar size={10} /> Única vez
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const updatedBudgets = { ...budgets }
+                                                                                updatedBudgets[currentPeriod] = updatedBudgets[currentPeriod].map(c =>
+                                                                                    (c.id === cat.id || c.name === cat.name) ? { ...c, oneMonthOnly: !c.oneMonthOnly } : c
+                                                                                )
+                                                                                setBudgets(updatedBudgets)
+                                                                                addNotification(`Categoría "${cat.name}" ahora es ${!cat.oneMonthOnly ? 'de única vez' : 'mensual'}`, 'info')
+                                                                            }}
+                                                                            className={`px-1.5 py-0.5 rounded border transition-all flex items-center gap-1 ${cat.oneMonthOnly ? 'bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100' : 'bg-slate-50 text-slate-400 border-slate-100 hover:text-slate-600 hover:bg-slate-100'}`}
+                                                                            title={cat.oneMonthOnly ? 'Cambiar a recurrente' : 'Marcar para este mes solamente'}
+                                                                        >
+                                                                            <Calendar size={10} />
+                                                                            <span className="text-[8px] font-black uppercase tracking-tighter">
+                                                                                {cat.oneMonthOnly ? 'Única vez' : 'Mensual'}
                                                                             </span>
-                                                                        )}
+                                                                        </button>
                                                                     </div>
                                                                     <span className={`text-[10px] font-bold uppercase tracking-widest ${cat.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
                                                                         {cat.type === 'income' ? 'Ingreso' : 'Gasto'}
