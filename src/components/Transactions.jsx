@@ -43,6 +43,9 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     // Estado para ordenamiento de la tabla
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' })
 
+    // Obtener la cuenta seleccionada (si hay una)
+    const selectedAccount = selectedAccountId ? accounts.find(a => a.id === selectedAccountId) : null;
+
     // Estados para importación de Excel
     const [importErrors, setImportErrors] = useState([])
     const [importPreview, setImportPreview] = useState([])
@@ -98,7 +101,8 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                     id: cat.id,
                     name: cat.name,
                     icon: cat.icon || (type === 'income' ? '💰' : '📄'),
-                    color: type === 'income' ? '#2ecc71' : '#95a5a6'
+                    color: type === 'income' ? '#2ecc71' : '#95a5a6',
+                    targetAccountId: cat.targetAccountId // Preservar la cuenta vinculada
                 })
             }
         })
@@ -558,30 +562,83 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 if (updatedAcc2) await saveToSupabase('accounts', 'finanzas_accounts', updatedAcc2, currentAccList)
 
             } else {
-                const tx = { ...row, id: row.id || crypto.randomUUID(), amount }
+                const amount = round2(row.amount)
+                const allCats = getCombinedCategories(row.type)
+                const catDef = allCats.find(c => c.id === row.categoryId)
+                const targetAccountId = catDef?.targetAccountId
 
-                // 1. Agregar a la lista local
-                currentTxList = [tx, ...currentTxList]
-
-                // 2. Actualizar balance local en la lista de cuentas
-                currentAccList = currentAccList.map(acc => {
-                    if (acc.id === tx.accountId) {
-                        let newBalance = acc.balance
-                        if (acc.type === 'Préstamo') {
-                            newBalance = tx.type === 'income' ? acc.balance - amount : acc.balance + amount
-                        } else {
-                            newBalance = tx.type === 'income' ? acc.balance + amount : acc.balance - amount
-                        }
-                        return { ...acc, balance: round2(newBalance) }
+                if (targetAccountId) {
+                    // Lógica de espejo para categoría vinculada en modo por lotes
+                    const transferId = crypto.randomUUID()
+                    const sourceAcc = currentAccList.find(a => a.id === row.accountId)
+                    
+                    const tx1 = { 
+                        ...row, 
+                        id: row.id || crypto.randomUUID(), 
+                        amount,
+                        isTransfer: true,
+                        transferId
                     }
-                    return acc
-                })
+                    const tx2 = {
+                        id: crypto.randomUUID(),
+                        date: row.date,
+                        accountId: targetAccountId,
+                        fromAccountId: row.accountId,
+                        categoryId: 'transfer',
+                        amount,
+                        type: row.type === 'expense' ? 'income' : 'expense',
+                        note: `Autotransferencia (${catDef.name}): ${row.type === 'expense' ? 'Desde' : 'Hacia'} ${sourceAcc?.name || 'cuenta origen'}${row.note ? ' - ' + row.note : ''}`,
+                        isTransfer: true,
+                        transferId,
+                        attachment: null
+                    }
 
-                // 3. Sincronizar individualmente as it does processTransaction
-                await saveToSupabase('transactions', 'finanzas_transactions', tx, currentTxList)
-                const updatedAccount = currentAccList.find(a => a.id === tx.accountId)
-                if (updatedAccount) {
-                    await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, currentAccList)
+                    currentTxList = [tx1, tx2, ...currentTxList]
+
+                    // Actualizar balances de ambas cuentas
+                    currentAccList = currentAccList.map(acc => {
+                        if (acc.id === tx1.accountId) {
+                            let newBalance = acc.type === 'Préstamo' 
+                                ? (tx1.type === 'income' ? acc.balance - amount : acc.balance + amount)
+                                : (tx1.type === 'income' ? acc.balance + amount : acc.balance - amount)
+                            return { ...acc, balance: round2(newBalance) }
+                        }
+                        if (acc.id === tx2.accountId) {
+                            let newBalance = acc.type === 'Préstamo'
+                                ? (tx2.type === 'income' ? acc.balance - amount : acc.balance + amount)
+                                : (tx2.type === 'income' ? acc.balance + amount : acc.balance - amount)
+                            return { ...acc, balance: round2(newBalance) }
+                        }
+                        return acc
+                    })
+
+                    // Sincronizar
+                    await saveToSupabase('transactions', 'finanzas_transactions', tx1, currentTxList)
+                    await saveToSupabase('transactions', 'finanzas_transactions', tx2, currentTxList)
+                    const updatedAcc1 = currentAccList.find(a => a.id === tx1.accountId)
+                    const updatedAcc2 = currentAccList.find(a => a.id === tx2.accountId)
+                    if (updatedAcc1) await saveToSupabase('accounts', 'finanzas_accounts', updatedAcc1, currentAccList)
+                    if (updatedAcc2) await saveToSupabase('accounts', 'finanzas_accounts', updatedAcc2, currentAccList)
+                } else {
+                    // Transacción normal
+                    const tx = { ...row, id: row.id || crypto.randomUUID(), amount }
+                    currentTxList = [tx, ...currentTxList]
+
+                    currentAccList = currentAccList.map(acc => {
+                        if (acc.id === tx.accountId) {
+                            let newBalance = acc.type === 'Préstamo'
+                                ? (tx.type === 'income' ? acc.balance - amount : acc.balance + amount)
+                                : (tx.type === 'income' ? acc.balance + amount : acc.balance - amount)
+                            return { ...acc, balance: round2(newBalance) }
+                        }
+                        return acc
+                    })
+
+                    await saveToSupabase('transactions', 'finanzas_transactions', tx, currentTxList)
+                    const updatedAccount = currentAccList.find(a => a.id === tx.accountId)
+                    if (updatedAccount) {
+                        await saveToSupabase('accounts', 'finanzas_accounts', updatedAccount, currentAccList)
+                    }
                 }
             }
         }
@@ -609,6 +666,86 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
     // Función auxiliar para procesar transacción y actualizar balances
     const processTransaction = async (transaction) => {
+        // ============================================================================
+        // LÓGICA DE TRANSFERENCIA AUTOMÁTICA POR CATEGORÍA
+        // ============================================================================
+        // Si la categoría tiene una cuenta vinculada (targetAccountId), 
+        // convertimos este movimiento en una transferencia automática.
+        const allCats = getCombinedCategories(transaction.type)
+        const catDef = allCats.find(c => c.id === transaction.categoryId)
+
+        if (catDef && catDef.targetAccountId && !transaction.isTransfer) {
+            const transferId = crypto.randomUUID()
+            const sourceAcc = accounts.find(a => a.id === transaction.accountId)
+            const targetAcc = accounts.find(a => a.id === catDef.targetAccountId)
+
+            if (targetAcc) {
+                // 1. Transaction 1: La original (marcada como parte de transferencia)
+                const tx1 = {
+                    ...transaction,
+                    isTransfer: true,
+                    transferId
+                }
+
+                // 2. Transaction 2: El espejo en la cuenta destino
+                const tx2 = {
+                    id: crypto.randomUUID(),
+                    date: transaction.date,
+                    accountId: catDef.targetAccountId,
+                    fromAccountId: transaction.accountId,
+                    categoryId: 'transfer',
+                    amount: transaction.amount,
+                    type: transaction.type === 'expense' ? 'income' : 'expense',
+                    note: `Autotransferencia (${catDef.name}): ${transaction.type === 'expense' ? 'Desde' : 'Hacia'} ${sourceAcc?.name || 'cuenta origen'}${transaction.note ? ' - ' + transaction.note : ''}`,
+                    isTransfer: true,
+                    transferId
+                }
+
+                const updatedTransactions = [tx1, tx2, ...transactions]
+                setTransactions(updatedTransactions)
+
+                // 3. Actualizar ambos balances
+                const updatedAccounts = accounts.map(acc => {
+                    // Actualizar cuenta origen
+                    if (acc.id === tx1.accountId) {
+                        let newBalance = acc.balance
+                        if (acc.type === 'Préstamo') {
+                            newBalance = tx1.type === 'income' ? acc.balance - tx1.amount : acc.balance + tx1.amount
+                        } else {
+                            newBalance = tx1.type === 'income' ? acc.balance + tx1.amount : acc.balance - tx1.amount
+                        }
+                        return { ...acc, balance: round2(newBalance) }
+                    }
+                    // Actualizar cuenta destino
+                    if (acc.id === tx2.accountId) {
+                        let newBalance = acc.balance
+                        if (acc.type === 'Préstamo') {
+                            newBalance = tx2.type === 'income' ? acc.balance - tx2.amount : acc.balance + tx2.amount
+                        } else {
+                            newBalance = tx2.type === 'income' ? acc.balance + tx2.amount : acc.balance - tx2.amount
+                        }
+                        return { ...acc, balance: round2(newBalance) }
+                    }
+                    return acc
+                })
+                setAccounts(updatedAccounts)
+
+                // 4. Sincronizar todo
+                await Promise.all([
+                    saveToSupabase('transactions', 'finanzas_transactions', tx1, updatedTransactions),
+                    saveToSupabase('transactions', 'finanzas_transactions', tx2, updatedTransactions),
+                    saveToSupabase('accounts', 'finanzas_accounts', updatedAccounts.find(a => a.id === tx1.accountId), updatedAccounts),
+                    saveToSupabase('accounts', 'finanzas_accounts', updatedAccounts.find(a => a.id === tx2.accountId), updatedAccounts)
+                ])
+
+                createBackup('transactions', updatedTransactions)
+                createBackup('accounts', updatedAccounts)
+                addNotification(`Transferencia automática a "${targetAcc.name}" realizada`, 'success')
+                return // Salimos, ya procesamos todo
+            }
+        }
+
+        // --- LÓGICA NORMAL (Para transacciones sin cuenta vinculada) ---
         // Agregar transacción al inicio del array
         const updatedTransactions = [transaction, ...transactions]
         setTransactions(updatedTransactions)
@@ -1381,12 +1518,25 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 if (type !== 'ingreso' && type !== 'gasto') errors.push(`Fila ${rowNum}: Tipo inválido (debe ser 'ingreso' o 'gasto')`)
 
                 // 4. Validar Categoría (Buscamos ID)
-                const allCats = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense]
+                const incomeCats = getCombinedCategories('income')
+                const expenseCats = getCombinedCategories('expense')
+                const allCats = [...incomeCats, ...expenseCats]
                 let categoryId = ''
+                let isLinkedTransfer = false
+                let targetAccountId = ''
+
                 if (categoryRaw) {
                     const searchName = categoryRaw.toString().trim().toLowerCase()
                     const catFound = allCats.find(c => c.name.toLowerCase() === searchName)
-                    categoryId = catFound ? catFound.id : 'others' // Default a 'Otros'
+                    if (catFound) {
+                        categoryId = catFound.id
+                        if (catFound.targetAccountId) {
+                            isLinkedTransfer = true
+                            targetAccountId = catFound.targetAccountId
+                        }
+                    } else {
+                        categoryId = 'others' // Default a 'Otros'
+                    }
                 } else {
                     errors.push(`Fila ${rowNum}: Falta el nombre de la categoría`)
                 }
@@ -1402,13 +1552,11 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         errors.push(`Fila ${rowNum}: La cuenta '${accountRaw}' no coincide con ninguna cuenta guardada. Verifica el nombre exacto.`)
                     }
                 } else {
-                    // Si no se especifica cuenta y solo hay una, usar esa. Si hay varias, error.
                     if (accounts.length === 1) accountId = accounts[0].id
                     else errors.push(`Fila ${rowNum}: No se especificó la cuenta en el Excel y tienes varias registradas.`)
                 }
 
                 if (errors.length === 0 || !errors[errors.length - 1].includes(`Fila ${rowNum}`)) {
-                    // Si no hubo errores nuevos para esta fila
                     validRows.push({
                         id: crypto.randomUUID(),
                         date,
@@ -1416,9 +1564,10 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         amount,
                         categoryId,
                         accountId,
+                        targetAccountId: targetAccountId || null,
                         note: noteRaw || '',
                         attachment: null,
-                        isTransfer: false
+                        isTransfer: false // Las transacciones con categoría linked se expanden en confirmImport
                     })
                 }
             }
@@ -1432,88 +1581,102 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     const confirmImport = async () => {
         if (importPreview.length === 0) return
 
-        // Separar transferencias de transacciones normales
-        const transfers = importPreview.filter(tx => tx.isTransfer)
-        const normalTransactions = importPreview.filter(tx => !tx.isTransfer)
-
-        // 1. Preparar transacciones normales
-        const newNormalTransactions = [...normalTransactions, ...transactions]
-
-        // 2. Preparar transacciones de transferencias (crear pares)
-        const transferTransactions = []
-        transfers.forEach(transfer => {
-            const transferId = crypto.randomUUID()
-            const fromAccount = accounts.find(a => a.id === transfer.fromAccountId)
-            const toAccount = accounts.find(a => a.id === transfer.toAccountId)
-
-            // Transacción de salida
-            transferTransactions.push({
-                id: crypto.randomUUID(),
-                transferId,
-                isTransfer: true,
-                type: 'expense',
-                accountId: transfer.fromAccountId,
-                toAccountId: transfer.toAccountId,
-                categoryId: 'transfer',
-                amount: transfer.amount,
-                date: transfer.date,
-                note: `Transferencia a ${toAccount?.name || 'Destino'}${transfer.note ? ': ' + transfer.note : ''}`,
-                attachment: null
-            })
-
-            // Transacción de entrada
-            transferTransactions.push({
-                id: crypto.randomUUID(),
-                transferId,
-                isTransfer: true,
-                type: 'income',
-                accountId: transfer.toAccountId,
-                fromAccountId: transfer.fromAccountId,
-                categoryId: 'transfer',
-                amount: transfer.amount,
-                date: transfer.date,
-                note: `Transferencia desde ${fromAccount?.name || 'Origen'}${transfer.note ? ': ' + transfer.note : ''}`,
-                attachment: null
-            })
-        })
-
-        // 3. Combinar todas las transacciones
-        const allNewTransactions = [...transferTransactions, ...normalTransactions, ...transactions]
-
-        // 4. Calcular los nuevos balances de las cuentas
+        const processedTransactions = []
         let updatedAccounts = [...accounts]
 
-        // Procesar transacciones normales
-        normalTransactions.forEach(tx => {
-            updatedAccounts = updatedAccounts.map(acc => {
-                if (acc.id === tx.accountId) {
+        const applyBalanceChange = (accountId, type, amount, currentAccounts) => {
+            return currentAccounts.map(acc => {
+                if (acc.id === accountId) {
                     let newBalance = acc.balance
                     if (acc.type === 'Préstamo') {
-                        newBalance = tx.type === 'income' ? acc.balance - tx.amount : acc.balance + tx.amount
+                        // Para depósitos a préstamos, disminuye la deuda
+                        newBalance = type === 'income' ? acc.balance - amount : acc.balance + amount
                     } else {
-                        newBalance = tx.type === 'income' ? acc.balance + tx.amount : acc.balance - tx.amount
+                        newBalance = type === 'income' ? acc.balance + amount : acc.balance - amount
                     }
                     return { ...acc, balance: round2(newBalance) }
                 }
                 return acc
             })
+        }
+
+        importPreview.forEach(row => {
+            if (row.isTransfer && !row.categoryId) {
+                // Transferencia explícita (Desde-Hacia en Excel)
+                const transferId = crypto.randomUUID()
+                const fromAccount = accounts.find(a => a.id === row.fromAccountId)
+                const toAccount = accounts.find(a => a.id === row.toAccountId)
+
+                const tx1 = {
+                    id: crypto.randomUUID(),
+                    transferId,
+                    isTransfer: true,
+                    type: 'expense',
+                    accountId: row.fromAccountId,
+                    toAccountId: row.toAccountId,
+                    categoryId: 'transfer',
+                    amount: row.amount,
+                    date: row.date,
+                    note: `Transferencia a ${toAccount?.name || 'Destino'}${row.note ? ': ' + row.note : ''}`,
+                    attachment: null
+                }
+                const tx2 = {
+                    id: crypto.randomUUID(),
+                    transferId,
+                    isTransfer: true,
+                    type: 'income',
+                    accountId: row.toAccountId,
+                    fromAccountId: row.fromAccountId,
+                    categoryId: 'transfer',
+                    amount: row.amount,
+                    date: row.date,
+                    note: `Transferencia desde ${fromAccount?.name || 'Origen'}${row.note ? ': ' + row.note : ''}`,
+                    attachment: null
+                }
+
+                processedTransactions.push(tx1, tx2)
+                updatedAccounts = applyBalanceChange(tx1.accountId, tx1.type, tx1.amount, updatedAccounts)
+                updatedAccounts = applyBalanceChange(tx2.accountId, tx2.type, tx2.amount, updatedAccounts)
+            } else if (row.targetAccountId) {
+                // Gasto/Ingreso con categoría vinculada (Ahorro/Abono)
+                const transferId = crypto.randomUUID()
+                const sourceAcc = accounts.find(a => a.id === row.accountId)
+                const targetAcc = accounts.find(a => a.id === row.targetAccountId)
+                
+                // Tx 1: La original con su categoría
+                const tx1 = {
+                    ...row,
+                    isTransfer: true, // Se marca como transferencia para visualización
+                    transferId
+                }
+                delete tx1.targetAccountId // Limpiar campo temporal
+
+                // Tx 2: El espejo en la cuenta destino
+                const tx2 = {
+                    id: crypto.randomUUID(),
+                    date: row.date,
+                    accountId: row.targetAccountId,
+                    fromAccountId: row.accountId,
+                    categoryId: 'transfer',
+                    amount: row.amount,
+                    type: row.type === 'expense' ? 'income' : 'expense',
+                    note: `Autotransferencia (${row.type === 'expense' ? 'Ahorro' : 'Abono'}): ${row.type === 'expense' ? 'Desde' : 'Hacia'} ${sourceAcc?.name || 'cuenta origen'}${row.note ? ' - ' + row.note : ''}`,
+                    isTransfer: true,
+                    transferId,
+                    attachment: null
+                }
+
+                processedTransactions.push(tx1, tx2)
+                updatedAccounts = applyBalanceChange(tx1.accountId, tx1.type, tx1.amount, updatedAccounts)
+                updatedAccounts = applyBalanceChange(tx2.accountId, tx2.type, tx2.amount, updatedAccounts)
+            } else {
+                // Transacción normal
+                processedTransactions.push(row)
+                updatedAccounts = applyBalanceChange(row.accountId, row.type, row.amount, updatedAccounts)
+            }
         })
 
-        // Procesar transferencias
-        transferTransactions.forEach(tx => {
-            updatedAccounts = updatedAccounts.map(acc => {
-                if (acc.id === tx.accountId) {
-                    let newBalance = acc.balance
-                    if (acc.type === 'Préstamo') {
-                        newBalance = tx.type === 'income' ? acc.balance - tx.amount : acc.balance + tx.amount
-                    } else {
-                        newBalance = tx.type === 'income' ? acc.balance + tx.amount : acc.balance - tx.amount
-                    }
-                    return { ...acc, balance: round2(newBalance) }
-                }
-                return acc
-            })
-        })
+        const allNewTransactions = [...processedTransactions, ...transactions]
 
         // 5. Actualizar estados locales
         setTransactions(allNewTransactions)
@@ -1528,6 +1691,16 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
         if (txSyncResult && accSyncResult) {
             addNotification(`✅ Se importaron ${importPreview.length} movimientos y se actualizaron los balances correctamente.`, 'success')
+            
+            // Registrar en el historial
+            const newLog = {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                count: importPreview.length,
+                fileName: 'Importación Excel', // Podríamos pasar el nombre real si lo guardamos
+                transactions: importPreview.map(t => t.id)
+            }
+            setImportLogs([newLog, ...importLogs])
         } else {
             addNotification(`⚠️ Los datos se cargaron localmente pero hubo un problema al sincronizar con la nube.`, 'warning')
         }
@@ -1883,7 +2056,13 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
 
             {/* Resumen de Saldos del Periodo Filtro */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="card bg-white border-slate-100 shadow-sm">
+                <div 
+                    className="card bg-white shadow-sm transition-all duration-300"
+                    style={{ 
+                        border: selectedAccount ? `1px solid ${selectedAccount.color}30` : '1px solid #f1f5f9',
+                        borderTop: selectedAccount ? `4px solid ${selectedAccount.color}` : '1px solid #f1f5f9'
+                    }}
+                >
                     <div className="flex items-center gap-3 mb-3">
                         <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
                             <ArrowUpCircle size={20} />
@@ -1894,7 +2073,13 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         ${totals.income.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </p>
                 </div>
-                <div className="card bg-white border-slate-100 shadow-sm">
+                <div 
+                    className="card bg-white shadow-sm transition-all duration-300"
+                    style={{ 
+                        border: selectedAccount ? `1px solid ${selectedAccount.color}30` : '1px solid #f1f5f9',
+                        borderTop: selectedAccount ? `4px solid ${selectedAccount.color}` : '1px solid #f1f5f9'
+                    }}
+                >
                     <div className="flex items-center gap-3 mb-3">
                         <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
                             <ArrowDownCircle size={20} />
@@ -1905,14 +2090,27 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                         ${totals.expense.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </p>
                 </div>
-                <div className="card bg-white border-slate-100 shadow-sm">
+                <div 
+                    className="card bg-white shadow-sm transition-all duration-300"
+                    style={{ 
+                        border: selectedAccount ? `1px solid ${selectedAccount.color}30` : '1px solid #f1f5f9',
+                        borderTop: selectedAccount ? `4px solid ${selectedAccount.color}` : '1px solid #f1f5f9'
+                    }}
+                >
                     <div className="flex items-center gap-3 mb-3">
-                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                        <div 
+                            className="p-2 rounded-lg"
+                            style={{ 
+                                backgroundColor: selectedAccount ? `${selectedAccount.color}15` : '#eff6ff',
+                                color: selectedAccount ? selectedAccount.color : '#2563eb'
+                            }}
+                        >
                             <CreditCard size={20} />
                         </div>
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Balance del Periodo</span>
                     </div>
-                    <p className={`text-2xl font-bold ${(totals.income - totals.expense) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                    <p className={`text-2xl font-bold ${(totals.income - totals.expense) >= 0 ? (selectedAccount ? '' : 'text-blue-600') : 'text-rose-600'}`}
+                       style={(totals.income - totals.expense) >= 0 && selectedAccount ? { color: selectedAccount.color } : {}}>
                         ${(totals.income - totals.expense).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </p>
                 </div>
@@ -2131,15 +2329,24 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                 )}
             </div>
 
-            {selectedAccountId && (
-                <div className="flex items-center justify-between bg-blue-50 border border-blue-100 p-4 rounded-xl animate-in slide-in-from-top-2 duration-300">
+            {selectedAccount && (
+                <div 
+                    className="flex items-center justify-between p-4 rounded-xl animate-in slide-in-from-top-2 duration-300"
+                    style={{ 
+                        backgroundColor: `${selectedAccount.color}10`,
+                        border: `1px solid ${selectedAccount.color}25`
+                    }}
+                >
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-600 text-white rounded-lg flex items-center justify-center">
+                        <div 
+                            className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
+                            style={{ backgroundColor: selectedAccount.color }}
+                        >
                             <CreditCard size={20} />
                         </div>
                         <div>
-                            <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Filtrando por cuenta</p>
-                            <h4 className="font-bold text-slate-900">{accounts.find(a => a.id === selectedAccountId)?.name}</h4>
+                            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: selectedAccount.color }}>Filtrando por cuenta</p>
+                            <h4 className="font-bold text-slate-900">{selectedAccount.name}</h4>
                         </div>
                     </div>
                     <button
@@ -2212,7 +2419,14 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                         </div>
                                     </div>
                                 </th>
-                                {selectedAccountId && <th className="px-6 py-4 text-right text-xs font-bold text-blue-600 uppercase tracking-widest">Saldo</th>}
+                                {selectedAccountId && (
+                                    <th 
+                                        className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest"
+                                        style={{ color: selectedAccount ? selectedAccount.color : '#2563eb' }}
+                                    >
+                                        Saldo
+                                    </th>
+                                )}
                                 <th className="px-6 py-4 text-center text-xs font-bold text-slate-500 uppercase tracking-widest w-28">Acciones</th>
                             </tr>
                         </thead>
@@ -2250,7 +2464,13 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                 <td className="px-6 py-4 text-right">
                                                     <span className="text-sm font-bold text-slate-400">---</span>
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-black text-blue-600 bg-blue-100/20 whitespace-nowrap">
+                                                <td 
+                                                    className="px-6 py-4 text-right font-black whitespace-nowrap"
+                                                    style={{ 
+                                                        color: selectedAccount ? selectedAccount.color : '#2563eb',
+                                                        backgroundColor: selectedAccount ? `${selectedAccount.color}10` : '#eff6ff33'
+                                                    }}
+                                                >
                                                     ${t.runningBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
@@ -2363,7 +2583,13 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
                                                 {t.type === 'income' ? '+' : '-'}${t.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                             </td>
                                             {selectedAccountId && (
-                                                <td className="px-6 py-4 text-right font-black text-slate-900 bg-slate-50/30 whitespace-nowrap">
+                                                <td 
+                                                    className="px-6 py-4 text-right font-black whitespace-nowrap"
+                                                    style={{ 
+                                                        color: selectedAccount ? selectedAccount.color : '#0f172a', // text-slate-900
+                                                        backgroundColor: selectedAccount ? `${selectedAccount.color}08` : '#f8fafc4d' // bg-slate-50/30
+                                                    }}
+                                                >
                                                     ${t.runningBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                                                 </td>
                                             )}

@@ -2,7 +2,7 @@
 // IMPORTS: React, iconos, animaciones y categorías
 // ============================================================================
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText, Rocket, RotateCcw, ShieldCheck } from 'lucide-react'
+import { Plus, Trash2, PieChart, X, TrendingUp, Calendar, ChevronRight, LayoutGrid, BarChart3, Filter, ArrowUpRight, ArrowDownRight, FileText, Rocket, RotateCcw, ShieldCheck, ArrowRightLeft } from 'lucide-react'
 import { format, subMonths, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -717,6 +717,12 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                                     <span className={`text-[10px] font-bold uppercase tracking-widest ${cat.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
                                                                         {cat.type === 'income' ? 'Ingreso' : 'Gasto'}
                                                                     </span>
+                                                                    {cat.targetAccountId && (
+                                                                        <div className="flex items-center gap-1 mt-1 text-[9px] font-black text-blue-600 bg-blue-50 w-fit px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                                                                            <ArrowRightLeft size={10} />
+                                                                            <span>Vinc: {accounts.find(a => a.id === cat.targetAccountId)?.name || 'Cuenta'}</span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </td>
@@ -1077,7 +1083,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                             ))}
                                                         </select>
                                                         <p className="text-[9px] text-slate-400 mt-2 italic px-1 leading-tight">
-                                                            * Si seleccionas una cuenta, las transferencias hacia esa cuenta se contabilizarán como ejecución de este presupuesto.
+                                                            * Al seleccionar una cuenta, se creará una transferencia automática cada vez que registres un movimiento en esta categoría.
                                                         </p>
                                                     </div>
 
