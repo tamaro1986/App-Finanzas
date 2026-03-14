@@ -389,8 +389,8 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                 categories.forEach(cat => {
                     if (cat.type === 'expense') {
                         if (selectedCategoryFilter === 'All' || cat.name === selectedCategoryFilter) {
-                            monthlyStats[period].budgeted += cat.projected || 0
-                            yearlyStats[year].budgeted += cat.projected || 0
+                            monthlyStats[period].budgeted += parseFloat(cat.projected) || 0
+                            yearlyStats[year].budgeted += parseFloat(cat.projected) || 0
                         }
                     }
                 })
@@ -433,7 +433,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             executed: stats.monthlyStats[p].executed
         }))
 
-    const totalProjected = currentMonthBudgets.reduce((sum, c) => sum + (c.type === 'expense' ? (c.projected || 0) : 0), 0)
+    const totalProjected = currentMonthBudgets.reduce((sum, c) => sum + (c.type === 'expense' ? (parseFloat(c.projected) || 0) : 0), 0)
     const totalExecuted = transactions
         .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense' && !t.isTransfer && t.categoryId !== 'transfer')
         .reduce((sum, t) => sum + t.amount, 0)
@@ -599,7 +599,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                     })
                                                     .reduce((sum, t) => sum + t.amount, 0)
 
-                                                const percentage = cat.projected > 0 ? (executed / cat.projected * 100) : 0
+                                                const percentage = parseFloat(cat.projected) > 0 ? (executed / parseFloat(cat.projected) * 100) : 0
                                                 const isGoodPerformance = cat.type === 'income' ? executed >= cat.projected : executed <= cat.projected
                                                 const isOverBudget = cat.type === 'expense' && executed > cat.projected && cat.projected > 0
 
@@ -625,12 +625,25 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                                     type="number"
                                                                     value={cat.projected}
                                                                     onChange={(e) => {
-                                                                        const val = round2(parseFloat(e.target.value) || 0);
+                                                                        const val = e.target.value;
                                                                         const updatedBudgets = { ...budgets }
 
                                                                         const periods = Object.keys(updatedBudgets)
                                                                         periods.forEach(period => {
                                                                             // Si autoPropagate está activo, actualiza este mes y futuros. Si no, solo este mes.
+                                                                            if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
+                                                                                updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
+                                                                                    (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
+                                                                                )
+                                                                            }
+                                                                        })
+                                                                        setBudgets(updatedBudgets);
+                                                                    }}
+                                                                    onBlur={(e) => {
+                                                                        const val = round2(parseFloat(e.target.value) || 0);
+                                                                        const updatedBudgets = { ...budgets }
+                                                                        const periods = Object.keys(updatedBudgets)
+                                                                        periods.forEach(period => {
                                                                             if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
                                                                                 updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
                                                                                     (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
@@ -651,7 +664,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                                         {executed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                                     </span>
                                                                 </div>
-                                                                {cat.projected > 0 && (
+                                                                {parseFloat(cat.projected) > 0 && (
                                                                     <span className={`text-[10px] font-bold ${isOverBudget ? 'text-rose-500' : (cat.type === 'income' && executed >= cat.projected ? 'text-emerald-500' : 'text-slate-400')}`}>
                                                                         {percentage.toFixed(0)}%
                                                                     </span>
@@ -683,7 +696,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                             )
 
                                             const calculateTypeAmounts = (cats) => {
-                                                const proj = cats.reduce((sum, c) => sum + (c.projected || 0), 0)
+                                                const proj = cats.reduce((sum, c) => sum + (parseFloat(c.projected) || 0), 0)
                                                 const exec = cats.reduce((sum, cat) => {
                                                     const catExecuted = transactions
                                                         .filter(t => {
