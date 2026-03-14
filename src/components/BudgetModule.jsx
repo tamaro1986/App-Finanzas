@@ -251,24 +251,28 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                 return
             }
 
-            // 1. Guardar copia local completa
+            // 1. Guardar copia local completa (Estado actual)
             localStorage.setItem('finanzas_budgets', JSON.stringify(budgets))
 
             // 2. Sincronizar el periodo actual con Supabase
-            // Solo guardamos si el objeto budgets no está vacío
-            if (Object.keys(budgets).length > 0 && budgets[currentPeriod] && budgets[currentPeriod].length > 0) {
+            // Guardamos incluso si está vacío (para permitir limpiar presupuesto)
+            if (Object.keys(budgets).length > 0 && budgets[currentPeriod]) {
                 const budgetRow = {
                     month: currentPeriod,
                     categories: budgets[currentPeriod]
                 }
 
+                // 3. Sincronizar con Supabase
                 const result = await saveToSupabase('budgets', 'finanzas_budgets', budgetRow, budgets)
 
-                if (result && !result.savedToCloud) {
-                    addNotification(`Presupuesto de ${currentPeriod} guardado localmente.`, 'warning')
-                } else if (result && result.savedToCloud) {
-                    // Solo notificar si no es la carga inicial silenciosa
-                    if (!isFirstRun.current) {
+                if (result) {
+                    if (!result.savedToCloud) {
+                        // Solo advertir si hubo un error real, no si es solo falta de sesión
+                        if (result.error) {
+                            addNotification(`Presupuesto de ${currentPeriod} guardado solo localmente.`, 'warning')
+                        }
+                    } else if (result.savedToCloud) {
+                        // Notificación de éxito
                         addNotification(`Presupuesto de ${currentPeriod} sincronizado.`, 'success')
                     }
                 }

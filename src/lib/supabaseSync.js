@@ -193,7 +193,40 @@ export const syncToSupabase = async (tableName, localStorageKey, data = null) =>
             return true
         }
 
-        // Convertir a snake_case y agregar user_id
+        // ─── MANEJO ESPECIAL PARA BUDGETS ───────────────────────────────────
+        // El estado de budgets es un OBJETO { "YYYY-MM": [...categorías] }
+        // pero Supabase espera FILAS { month, categories, user_id }.
+        // Si dataToSync no es un array, lo convertimos al formato correcto.
+        if (tableName === 'budgets' && !Array.isArray(dataToSync)) {
+            const budgetRows = Object.entries(dataToSync)
+                .filter(([key, cats]) => /^\d{4}-\d{2}$/.test(key) && Array.isArray(cats))
+                .map(([month, categories]) => ({ month, categories, user_id: userId }))
+
+            if (budgetRows.length === 0) {
+                console.log('No budget rows to sync')
+                return true
+            }
+
+            console.log(`Syncing ${budgetRows.length} budget months to Supabase...`)
+
+            const { error } = await supabase
+                .from('budgets')
+                .upsert(budgetRows, {
+                    onConflict: 'user_id,month',
+                    ignoreDuplicates: false
+                })
+
+            if (error) {
+                console.error('Supabase sync error (budgets):', error)
+                throw error
+            }
+
+            console.log('✓ Budgets synced successfully')
+            return true
+        }
+        // ────────────────────────────────────────────────────────────────────
+
+        // Convertir a snake_case y agregar user_id (para tablas normales de arrays)
         const dataWithUserId = Array.isArray(dataToSync)
             ? dataToSync.map(item => ({ ...convertObjectToSnakeCase(item), user_id: userId }))
             : { ...convertObjectToSnakeCase(dataToSync), user_id: userId }
@@ -289,12 +322,27 @@ export const saveToSupabase = async (tableName, localStorageKey, item, allItems)
     // Primero guardar en localStorage (siempre funciona como backup)
     try {
         if (allItems) {
-            // Asegurar que todos tengan updatedAt para el merge inteligente
-            const itemsWithTime = allItems.map(i => {
-                if (i.id === item?.id) return { ...i, updatedAt: now };
-                return i;
-            });
-            localStorage.setItem(localStorageKey, JSON.stringify(itemsWithTime))
+            let dataToSave;
+            if (Array.isArray(allItems)) {
+                // Asegurar que todos tengan updatedAt para el merge inteligente
+                dataToSave = allItems.map(i => {
+                    if (i.id === item?.id) return { ...i, updatedAt: now };
+                    return i;
+                });
+            } else {
+                // Manejo para presupuestos (objetos) o configuraciones simples
+                dataToSave = { ...allItems };
+                // Si es el objeto de budgets, asegurarnos que el periodo actual esté actualizado
+                if (tableName === 'budgets' && item && (item.month || item.categories)) {
+                    const month = item.month || Object.keys(item).find(k => k.match(/^\d{4}-\d{2}$/));
+                    const categories = item.categories || item[month];
+                    if (month && categories) {
+                        dataToSave[month] = categories;
+                    }
+                }
+            }
+            
+            localStorage.setItem(localStorageKey, JSON.stringify(dataToSave))
 
             // Log especial para ambiente de prueba
             if (window.location.hostname === 'localhost') {
@@ -326,15 +374,29 @@ export const saveToSupabase = async (tableName, localStorageKey, item, allItems)
 
         // Manejo especial para la tabla budgets
         let onConflictTarget = 'id'
-        if (tableName === 'budgets') {
-            // Budgets tiene una estructura especial: { month, categories }
-            // Donde month es un string (ej: "2026-01") y categories es un objeto JSON
-            const budgetData = {
-                month: item.month || Object.keys(item).find(k => k.match(/^\d{4}-\d{2}$/)),
-                categories: item.categories || item[Object.keys(item).find(k => k.match(/^\d{4}-\d{2}$/))]
+        if (tableName === 'budgets' || tableName === 'finanzas_budgets') {
+            // Budgets tiene una estructura especial en el State: { "YYYY-MM": [...] }
+            // Pero en Supabase guardamos cada mes como una fila: { month: "YYYY-MM", categories: [...] }
+            let budgetData = {
+                month: item.month,
+                categories: item.categories
             }
-            itemSnakeCase = budgetData
-            onConflictTarget = 'user_id,month' // Para presupuestos, el conflicto es por mes y usuario
+
+            // Si el item no tiene month/categories directamente, intentar extraerlo del formato { "YYYY-MM": [...] }
+            if (!budgetData.month) {
+                const monthKey = Object.keys(item).find(k => k.match(/^\d{4}-\d{2}$/))
+                if (monthKey) {
+                    budgetData.month = monthKey
+                    budgetData.categories = item[monthKey]
+                }
+            }
+
+            if (budgetData.month) {
+                itemSnakeCase = budgetData
+                // Para presupuestos, el conflicto es por mes y usuario
+                // Esto requiere un índice UNIQUE(user_id, month) en la base de datos
+                onConflictTarget = 'user_id,month'
+            }
         }
 
         // Agregar user_id al item
@@ -494,9 +556,11 @@ export const initializeData = async (tableName, localStorageKey) => {
     }
 
     // Caso B: Remoto vacío pero local tiene datos -> Subir local a Supabase (Primer sync)
-    if (remoteData.length === 0 && (Array.isArray(localData) ? localData.length > 0 : Object.keys(localData).length > 0)) {
+    const localHasData = Array.isArray(localData) ? localData.length > 0 : Object.keys(localData).length > 0
+    if (remoteData.length === 0 && localHasData) {
         console.log(`[SupabaseSync] Nube vacía para ${tableName}, subiendo datos locales...`)
         // No esperamos al sync para devolver los datos y no bloquear la UI
+        // syncToSupabase maneja tanto arrays como el objeto-budgets correctamente
         syncToSupabase(tableName, localStorageKey, localData)
         return localData
     }
