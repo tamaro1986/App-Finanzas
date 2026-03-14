@@ -239,6 +239,7 @@ function App() {
                         budgets={budgets || {}}
                         setBudgets={setBudgets}
                         transactions={transactions}
+                        accounts={accounts}
                     />
                 )
             case 'accounts':

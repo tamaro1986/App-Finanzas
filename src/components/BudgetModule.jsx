@@ -66,13 +66,13 @@ const ExecutionChart = ({ data }) => {
 // PROPÓSITO: Gestionar presupuestos mensuales y análisis de gastos
 // CONECTADO A: Supabase tabla 'budgets'
 // ============================================================================
-const BudgetModule = ({ budgets, setBudgets, transactions }) => {
+const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
     const { addNotification } = useSyncNotifications()
     const [activeTab, setActiveTab] = useState('config') // 'config' or 'analysis'
     const [currentPeriod, setCurrentPeriod] = useState(format(new Date(), 'yyyy-MM'))
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All')
     const [isModalOpen, setIsModalOpen] = useState(false)
-    const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄' })
+    const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄', targetAccountId: '' })
     const [autoPropagate, setAutoPropagate] = useState(true) // Nueva configuración para propagación automática
 
     // ================= : NUEVO : ================================================
@@ -302,7 +302,8 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
             projected: amount,
             type: newCategory.type,
             icon: newCategory.icon || (newCategory.type === 'income' ? '💰' : '📄'),
-            actual: 0
+            actual: 0,
+            targetAccountId: newCategory.targetAccountId || null // Add this
         }
 
         // 🚀 PROPAGACIÓN: Agregar a este mes y a todos los meses FUTUROS existentes
@@ -328,7 +329,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         setBudgets(updatedBudgets)
 
         // Resetear formulario
-        setNewCategory({ name: '', amount: '', type: 'expense', icon: '📄' })
+        setNewCategory({ name: '', amount: '', type: 'expense', icon: '📄', targetAccountId: '' })
         setIsModalOpen(false)
         addNotification(`✅ Categoría "${category.name}" agregada y replicada a meses futuros`, 'success')
     }
@@ -401,20 +402,34 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
         transactions.forEach(t => {
             const period = t.date.substring(0, 7)
             const year = t.date.substring(0, 4)
-            if (t.type === 'expense' && !t.isTransfer && t.categoryId !== 'transfer') {
-                // 1. Intentar buscar en categorías predefinidas
-                const defaultCat = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
 
-                // 2. Si no es predefinida, buscar en las categorías configuradas en el presupuesto del periodo de la transacción
-                const budgetCat = (budgets[period] || []).find(c => c.id === t.categoryId || c.name === t.categoryId)
+            // 1. Buscar coincidencia por categoría directa
+            let budgetCat = (budgets[period] || []).find(c => c.id === t.categoryId || c.name === t.categoryId)
 
-                const categoryName = defaultCat?.name || budgetCat?.name || 'Otros'
+            // 2. Si es transferencia y no tiene categoría, buscar por cuenta destino (Ahorro/Abono)
+            if (!budgetCat && t.isTransfer && t.type === 'expense' && t.toAccountId) {
+                budgetCat = (budgets[period] || []).find(c => c.targetAccountId === t.toAccountId)
+            }
+
+            if (budgetCat && budgetCat.type === t.type) {
+                const categoryName = budgetCat.name
 
                 if (selectedCategoryFilter === 'All' || categoryName === selectedCategoryFilter) {
                     if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
                     if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
-                    monthlyStats[period].executed += t.amount
-                    yearlyStats[year].executed += t.amount
+                    monthlyStats[period].executed += t.amount || 0
+                    yearlyStats[year].executed += t.amount || 0
+                }
+            } else if (t.type === 'expense' && !t.isTransfer) {
+                // Fallback para transacciones sin presupuesto pero que son gastos directos
+                const defaultCat = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
+                const categoryName = defaultCat?.name || 'Otros'
+
+                if (selectedCategoryFilter === 'All' || categoryName === selectedCategoryFilter) {
+                    if (!monthlyStats[period]) monthlyStats[period] = { budgeted: 0, executed: 0 }
+                    if (!yearlyStats[year]) yearlyStats[year] = { budgeted: 0, executed: 0 }
+                    monthlyStats[period].executed += t.amount || 0
+                    yearlyStats[year].executed += t.amount || 0
                 }
             }
         })
@@ -435,8 +450,19 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
 
     const totalProjected = currentMonthBudgets.reduce((sum, c) => sum + (c.type === 'expense' ? (parseFloat(c.projected) || 0) : 0), 0)
     const totalExecuted = transactions
-        .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense' && !t.isTransfer && t.categoryId !== 'transfer')
-        .reduce((sum, t) => sum + t.amount, 0)
+        .filter(t => t.date.startsWith(currentPeriod) && t.type === 'expense')
+        .reduce((sum, t) => {
+            // Caso 1: Gasto directo (no transferencia)
+            if (!t.isTransfer && t.categoryId !== 'transfer') return sum + t.amount
+            
+            // Caso 2: Transferencia a una cuenta que es objetivo de presupuesto (Ahorro/Préstamo)
+            if (t.isTransfer && t.toAccountId) {
+                const isTarget = currentMonthBudgets.some(c => c.targetAccountId === t.toAccountId)
+                if (isTarget) return sum + t.amount
+            }
+            
+            return sum
+        }, 0)
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
@@ -593,14 +619,21 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                     .filter(t => {
                                                         if (!t.date.startsWith(currentPeriod)) return false
                                                         if (t.type !== cat.type) return false
-                                                        if (t.isTransfer || t.categoryId === 'transfer') return false
-                                                        const txCategory = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
-                                                        return txCategory?.name === cat.name || t.categoryId === cat.id
+
+                                                        // 1. Coincidencia por ID o Nombre
+                                                        const isDirectMatch = t.categoryId === cat.id || t.categoryName === cat.name
+                                                        if (isDirectMatch) return true
+
+                                                        // 2. Coincidencia por Transferencia a Cuenta (Ahorro/Abono)
+                                                        if (cat.targetAccountId && t.isTransfer && t.type === 'expense' && t.toAccountId === cat.targetAccountId) {
+                                                            return true
+                                                        }
+
+                                                        return false
                                                     })
                                                     .reduce((sum, t) => sum + t.amount, 0)
 
                                                 const percentage = parseFloat(cat.projected) > 0 ? (executed / parseFloat(cat.projected) * 100) : 0
-                                                const isGoodPerformance = cat.type === 'income' ? executed >= cat.projected : executed <= cat.projected
                                                 const isOverBudget = cat.type === 'expense' && executed > cat.projected && cat.projected > 0
 
                                                 return (
@@ -702,9 +735,17 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                         .filter(t => {
                                                             if (!t.date.startsWith(currentPeriod)) return false
                                                             if (t.type !== cat.type) return false
-                                                            if (t.isTransfer || t.categoryId === 'transfer') return false
-                                                            const txCategory = [...DEFAULT_CATEGORIES.income, ...DEFAULT_CATEGORIES.expense].find(c => c.id === t.categoryId)
-                                                            return txCategory?.name === cat.name || t.categoryId === cat.id
+
+                                                            // 1. Coincidencia por ID o Nombre
+                                                            const isDirectMatch = t.categoryId === cat.id || t.categoryName === cat.name
+                                                            if (isDirectMatch) return true
+
+                                                            // 2. Coincidencia por Transferencia a Cuenta (Ahorro/Abono)
+                                                            if (cat.targetAccountId && t.isTransfer && t.type === 'expense' && t.toAccountId === cat.targetAccountId) {
+                                                                return true
+                                                            }
+
+                                                            return false
                                                         })
                                                         .reduce((s, t) => s + t.amount, 0)
                                                     return sum + catExecuted
@@ -921,9 +962,32 @@ const BudgetModule = ({ budgets, setBudgets, transactions }) => {
                                                 onSelectIcon={(icon) => setNewCategory({ ...newCategory, icon })}
                                             />
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Meta Mensual ($)</label>
-                                            <input type="number" required placeholder="0.00" className="input-field !text-3xl !font-black !py-4" value={newCategory.amount} onChange={(e) => setNewCategory({ ...newCategory, amount: e.target.value })} />
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Meta Mensual ($)</label>
+                                                <input type="number" required step="0.01" placeholder="0.00" className="input-field !text-3xl !font-black !text-blue-600" value={newCategory.amount} onChange={(e) => setNewCategory({ ...newCategory, amount: e.target.value })} />
+                                            </div>
+
+                                            {newCategory.type === 'expense' && (
+                                                <div className="space-y-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">¿Es Ahorro o Pago de Deuda?</label>
+                                                    <select
+                                                        className="input-field !py-2 !text-sm"
+                                                        value={newCategory.targetAccountId || ''}
+                                                        onChange={(e) => setNewCategory({ ...newCategory, targetAccountId: e.target.value })}
+                                                    >
+                                                        <option value="">No (Transacción normal)</option>
+                                                        {accounts.map(acc => (
+                                                            <option key={acc.id} value={acc.id}>
+                                                                Sí, vincular a cuenta: {acc.name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[9px] text-slate-400 mt-2 italic px-1 leading-tight">
+                                                        * Si seleccionas una cuenta, las transferencias hacia esa cuenta se contabilizarán como ejecución de este presupuesto.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

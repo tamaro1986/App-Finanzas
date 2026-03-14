@@ -17,9 +17,17 @@ const CategoryReport = ({ budgets, currentPeriod, transactions, onExport }) => {
             .filter(t => {
                 if (!t.date.startsWith(currentPeriod)) return false
                 if (t.type !== cat.type) return false
-                // Aquí usamos el nombre para vincular (según la lógica existente en BudgetModule)
-                // Es mejorable si usamos IDs, pero mantenemos consistencia
-                return t.categoryName === cat.name || t.categoryId === cat.id
+                
+                // 1. Coincidencia directa
+                const isDirectMatch = t.categoryId === cat.id || t.categoryName === cat.name
+                if (isDirectMatch) return true
+
+                // 2. Coincidencia por Transferencia (Ahorro/Abono)
+                if (cat.targetAccountId && t.isTransfer && t.type === 'expense' && t.toAccountId === cat.targetAccountId) {
+                    return true
+                }
+
+                return false
             })
             .reduce((sum, t) => sum + t.amount, 0)
 
