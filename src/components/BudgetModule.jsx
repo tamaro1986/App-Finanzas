@@ -72,7 +72,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
     const [currentPeriod, setCurrentPeriod] = useState(format(new Date(), 'yyyy-MM'))
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All')
     const [isModalOpen, setIsModalOpen] = useState(false)
-    const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄', targetAccountId: '' })
+    const [newCategory, setNewCategory] = useState({ name: '', amount: '', type: 'expense', icon: '📄', targetAccountId: '', oneMonthOnly: false })
     const [autoPropagate, setAutoPropagate] = useState(true) // Nueva configuración para propagación automática
 
     // ================= : NUEVO : ================================================
@@ -121,6 +121,9 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
         const masterList = Array.from(allOtherCats).map(s => JSON.parse(s))
 
         masterList.forEach(mc => {
+            // No sincronizar categorías marcadas como de un solo mes
+            if (mc.oneMonthOnly) return
+
             const exists = currentCats.some(c => c.name.toLowerCase() === mc.name.toLowerCase() || c.id === mc.id)
             if (!exists) {
                 currentCats.push({
@@ -149,10 +152,12 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
             const prevBudgets = budgets[prevPeriod]
 
             if (prevBudgets && prevBudgets.length > 0) {
-                const clonedBudgets = prevBudgets.map(b => ({
-                    ...b,
-                    actual: 0
-                }))
+                const clonedBudgets = prevBudgets
+                    .filter(b => !b.oneMonthOnly) // No clonar categorías de un solo mes
+                    .map(b => ({
+                        ...b,
+                        actual: 0
+                    }))
                 setBudgets(prev => ({ ...prev, [currentPeriod]: clonedBudgets }))
             } else {
                 const defaults = [
@@ -180,10 +185,12 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
 
         for (let m = month + 1; m <= 12; m++) {
             const targetPeriod = `${year}-${m.toString().padStart(2, '0')}`
-            updatedBudgets[targetPeriod] = sourceBudget.map(cat => ({
-                ...cat,
-                actual: 0
-            }))
+            updatedBudgets[targetPeriod] = sourceBudget
+                .filter(cat => !cat.oneMonthOnly) // No replicar categorías de un solo mes
+                .map(cat => ({
+                    ...cat,
+                    actual: 0
+                }))
         }
 
         setBudgets(updatedBudgets)
@@ -303,7 +310,8 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
             type: newCategory.type,
             icon: newCategory.icon || (newCategory.type === 'income' ? '💰' : '📄'),
             actual: 0,
-            targetAccountId: newCategory.targetAccountId || null // Add this
+            targetAccountId: newCategory.targetAccountId || null,
+            oneMonthOnly: !!newCategory.oneMonthOnly // Asegurar que sea booleano
         }
 
         // 🚀 PROPAGACIÓN: Agregar a este mes y a todos los meses FUTUROS existentes
@@ -318,6 +326,9 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
 
         periods.forEach(period => {
             if (period >= currentPeriod) {
+                // Si es de un solo mes, solo agregar al mes actual
+                if (category.oneMonthOnly && period !== currentPeriod) return
+
                 const currentCats = updatedBudgets[period] || []
                 // Evitar duplicados por nombre
                 if (!currentCats.some(c => c.name.toLowerCase() === category.name.toLowerCase())) {
@@ -329,7 +340,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
         setBudgets(updatedBudgets)
 
         // Resetear formulario
-        setNewCategory({ name: '', amount: '', type: 'expense', icon: '📄', targetAccountId: '' })
+        setNewCategory({ name: '', amount: '', type: 'expense', icon: '📄', targetAccountId: '', oneMonthOnly: false })
         setIsModalOpen(false)
         addNotification(`✅ Categoría "${category.name}" agregada y replicada a meses futuros`, 'success')
     }
@@ -683,7 +694,14 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                                     {cat.icon || (cat.type === 'income' ? '💰' : '📄')}
                                                                 </div>
                                                                 <div className="flex flex-col">
-                                                                    <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{cat.name}</span>
+                                                                        {cat.oneMonthOnly && (
+                                                                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-600 text-[8px] font-black uppercase tracking-tighter rounded border border-amber-100 flex items-center gap-1">
+                                                                                <Calendar size={10} /> Única vez
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                     <span className={`text-[10px] font-bold uppercase tracking-widest ${cat.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
                                                                         {cat.type === 'income' ? 'Ingreso' : 'Gasto'}
                                                                     </span>
@@ -702,7 +720,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
 
                                                                         const periods = Object.keys(updatedBudgets)
                                                                         periods.forEach(period => {
-                                                                            if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
+                                                                            if (period === currentPeriod || (autoPropagate && period > currentPeriod && !cat.oneMonthOnly)) {
                                                                                 updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
                                                                                     (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
                                                                                 )
@@ -715,7 +733,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                                         const updatedBudgets = { ...budgets }
                                                                         const periods = Object.keys(updatedBudgets)
                                                                         periods.forEach(period => {
-                                                                            if (period === currentPeriod || (autoPropagate && period > currentPeriod)) {
+                                                                            if (period === currentPeriod || (autoPropagate && period > currentPeriod && !cat.oneMonthOnly)) {
                                                                                 updatedBudgets[period] = (updatedBudgets[period] || []).map(c =>
                                                                                     (c.id === cat.id || c.name === cat.name) ? { ...c, projected: val } : c
                                                                                 )
@@ -1031,23 +1049,42 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                             </div>
 
                                             {newCategory.type === 'expense' && (
-                                                <div className="space-y-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">¿Es Ahorro o Pago de Deuda?</label>
-                                                    <select
-                                                        className="input-field !py-2 !text-sm"
-                                                        value={newCategory.targetAccountId || ''}
-                                                        onChange={(e) => setNewCategory({ ...newCategory, targetAccountId: e.target.value })}
-                                                    >
-                                                        <option value="">No (Transacción normal)</option>
-                                                        {accounts.map(acc => (
-                                                            <option key={acc.id} value={acc.id}>
-                                                                Sí, vincular a cuenta: {acc.name}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                    <p className="text-[9px] text-slate-400 mt-2 italic px-1 leading-tight">
-                                                        * Si seleccionas una cuenta, las transferencias hacia esa cuenta se contabilizarán como ejecución de este presupuesto.
-                                                    </p>
+                                                <div className="space-y-4">
+                                                    <div className="space-y-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">¿Es Ahorro o Pago de Deuda?</label>
+                                                        <select
+                                                            className="input-field !py-2 !text-sm"
+                                                            value={newCategory.targetAccountId || ''}
+                                                            onChange={(e) => setNewCategory({ ...newCategory, targetAccountId: e.target.value })}
+                                                        >
+                                                            <option value="">No (Transacción normal)</option>
+                                                            {accounts.map(acc => (
+                                                                <option key={acc.id} value={acc.id}>
+                                                                    Sí, vincular a cuenta: {acc.name}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        <p className="text-[9px] text-slate-400 mt-2 italic px-1 leading-tight">
+                                                            * Si seleccionas una cuenta, las transferencias hacia esa cuenta se contabilizarán como ejecución de este presupuesto.
+                                                        </p>
+                                                    </div>
+
+                                                    {/* NUEVO: Toggle para Categoría de Única Vez */}
+                                                    <div className="flex items-center justify-between p-4 bg-amber-50/50 rounded-2xl border border-amber-100 cursor-pointer group"
+                                                         onClick={() => setNewCategory({ ...newCategory, oneMonthOnly: !newCategory.oneMonthOnly })}>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-2 rounded-lg ${newCategory.oneMonthOnly ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                                <Calendar size={18} />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-black text-slate-700 leading-tight">Gasto de única vez</p>
+                                                                <p className="text-[10px] text-slate-500 font-medium">No se replicará a los siguientes meses</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className={`w-10 h-6 rounded-full p-1 transition-all ${newCategory.oneMonthOnly ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                                                            <div className={`w-4 h-4 bg-white rounded-full transition-all transform ${newCategory.oneMonthOnly ? 'translate-x-4' : 'translate-x-0'}`} />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
