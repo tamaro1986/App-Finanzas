@@ -382,7 +382,7 @@ const CategoryCharts = ({ transactions, budgets = {} }) => {
                         <div className="relative z-10">
                             <div className="flex items-center justify-between mb-10">
                                 <h3 className="font-black text-slate-900 italic uppercase tracking-tight flex items-center gap-2">
-                                    <TrendingUp className="text-blue-500" size={20} /> Ahorro por Categoría
+                                    <TrendingUp className="text-blue-500" size={20} /> Ahorro y Pagos de Deuda
                                 </h3>
                                 <button onClick={() => setViewType(viewType === 'donut' ? 'bars' : 'donut')} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded-xl transition-all">
                                     {viewType === 'donut' ? <BarChart3 size={18} /> : <LayoutGrid size={18} />}

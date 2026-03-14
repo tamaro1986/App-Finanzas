@@ -821,14 +821,14 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                                         </>
                                                     )}
 
-                                                    {/* SECCIÓN METAS DE AHORRO / ACUMULACIÓN */}
+                                                    {/* SECCIÓN METAS DE AHORRO / ACUMULACIÓN / PRÉSTAMOS */}
                                                     {savingsGoalCats.length > 0 && (
                                                         <>
                                                             <tr className="bg-blue-50/30">
-                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] italic">Metas de Ahorro e Inversión</td>
+                                                                <td colSpan="4" className="px-8 py-3 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] italic">Ahorro y Pagos de Préstamos</td>
                                                             </tr>
                                                             {savingsGoalCats.map(renderCategoryRow)}
-                                                            {renderSubtotalRow('Total Acumulado', savingsTotals.proj, savingsTotals.exec, 'text-blue-700 bg-blue-50/50')}
+                                                            {renderSubtotalRow('Total Ahorro/Préstamos', savingsTotals.proj, savingsTotals.exec, 'text-blue-700 bg-blue-50/50')}
                                                         </>
                                                     )}
                                                 </>
@@ -884,7 +884,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
 
                             {/* Yearly Savings Quick Badge */}
                             <div className="card bg-slate-900 text-white border-none shadow-lg">
-                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">Acumulado en Metas (Total)</p>
+                                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-4">Total Ahorro y Préstamos (Histórico)</p>
                                 <div className="flex items-center justify-between">
                                     <h4 className="text-3xl font-black text-emerald-400">
                                         ${Object.values(stats.monthlyStats).reduce((sum, s) => sum + s.executedSavings, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -925,7 +925,7 @@ const BudgetModule = ({ budgets, setBudgets, transactions, accounts }) => {
                                         <tr className="bg-slate-50/50">
                                             <th className="px-8 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mes</th>
                                             <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gastos (Real)</th>
-                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Metas (Ahorro)</th>
+                                            <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ahorro/Deuda</th>
                                             <th className="px-8 py-4 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Var. Presupuesto</th>
                                         </tr>
                                     </thead>

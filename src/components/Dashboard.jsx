@@ -221,7 +221,7 @@ const Dashboard = ({ transactions = [], accounts = [], setActiveView, budgets = 
                     colorClass="bg-rose-600 text-rose-600"
                 />
                 <StatCard
-                    title={`Ahorro de ${format(parseISO(selectedPeriod + '-01'), 'MMMM', { locale: es })}`}
+                    title={`Ahorro y Préstamos de ${format(parseISO(selectedPeriod + '-01'), 'MMMM', { locale: es })}`}
                     amount={stats.savings}
                     icon={TrendingUp}
                     colorClass="bg-blue-600 text-blue-600"
