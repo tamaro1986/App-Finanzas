@@ -2,26 +2,26 @@
 // IMPORTS: Componentes y autenticación
 // ============================================================================
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import Sidebar from './components/Sidebar'
-import Dashboard from './components/Dashboard'
-import Auth from './components/Auth'
-import SyncStatusIndicator from './components/SyncStatusIndicator'
-import { SyncNotificationProvider } from './components/SyncNotification'
+import Sidebar from './shared/components/Sidebar'
+import Dashboard from './features/dashboard/Dashboard'
+import Auth from './features/auth/Auth'
+import SyncStatusIndicator from './shared/components/SyncStatusIndicator'
+import { SyncNotificationProvider } from './shared/contexts/SyncNotification'
 import { Menu, X, LogOut, Loader } from 'lucide-react'
-import { supabase } from './lib/supabase'
-import './utils/dataRecovery'
+import { supabase } from './shared/lib/supabase'
+import './shared/utils/dataRecovery'
 
-const BudgetModule = lazy(() => import('./components/BudgetModule'))
-const Settings = lazy(() => import('./components/Settings'))
-const Accounts = lazy(() => import('./components/Accounts'))
-const Transactions = lazy(() => import('./components/Transactions'))
-const Vehicles = lazy(() => import('./components/Vehicles'))
-const MedicalHistory = lazy(() => import('./components/MedicalHistory'))
-const Journal = lazy(() => import('./components/Journal'))
-const DebtModule = lazy(() => import('./components/DebtModule'))
-const InvestmentPortfolio = lazy(() => import('./components/InvestmentPortfolio'))
-const BusinessModule = lazy(() => import('./components/BusinessModule'))
-const CategoryCharts = lazy(() => import('./components/CategoryCharts'))
+const BudgetModule = lazy(() => import('./features/budgets/BudgetModule'))
+const Settings = lazy(() => import('./features/settings/Settings'))
+const Accounts = lazy(() => import('./features/accounts/Accounts'))
+const Transactions = lazy(() => import('./features/transactions/Transactions'))
+const Vehicles = lazy(() => import('./features/vehicles/Vehicles'))
+const MedicalHistory = lazy(() => import('./features/medical/MedicalHistory'))
+const Journal = lazy(() => import('./features/journal/Journal'))
+const DebtModule = lazy(() => import('./features/debts/DebtModule'))
+const InvestmentPortfolio = lazy(() => import('./features/investments/InvestmentPortfolio'))
+const BusinessModule = lazy(() => import('./features/erp/BusinessModule'))
+const CategoryCharts = lazy(() => import('./features/analytics/CategoryCharts'))
 
 // ============================================================================
 // COMPONENTE PRINCIPAL: App
@@ -116,7 +116,7 @@ function App() {
 
     const loadGlobalData = async () => {
         try {
-            const { initializeData } = await import('./lib/supabaseSync')
+            const { initializeData } = await import('./shared/lib/supabaseSync')
 
             const [txData, accData, budgetData, vehicleData, medRecordData, patientData, tccData, logData, medListData, invData, importLogData, bizProdData,
                 bizSuppliersData, bizPurchasesData, bizPurchaseItemsData, bizSalesData, bizSaleItemsData, bizRecipesData, bizRecipeItemsData, bizProdOrdersData, bizMovData] = await Promise.all([
