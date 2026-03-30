@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ShoppingCart, Plus, Trash2, Save, History, Search, ShoppingBag, FlaskConical, User, DollarSign, Calendar, Calculator, ArrowRight, Tag, Edit3 } from 'lucide-react';
+import { ShoppingCart, Plus, Trash2, Save, History, Search, ShoppingBag, FlaskConical, User, DollarSign, Calendar, Calculator, ArrowRight, Tag, Edit3, ChevronDown, ChevronRight, Package, Box } from 'lucide-react';
 
 export default function PurchaseModule({ products, suppliers, purchases, purchaseItems, onSavePurchase, onDeletePurchase }) {
     const [view, setView] = useState('new');
@@ -9,6 +9,7 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
     const [notes, setNotes] = useState('');
     const [editId, setEditId] = useState(null);
     const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+    const [expandedId, setExpandedId] = useState(null);
 
     const filteredProducts = useMemo(() =>
         products.filter(p => (p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku?.toLowerCase().includes(searchTerm.toLowerCase())))
@@ -36,7 +37,9 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
                 totalPaid: item.totalCost,
                 unitCost: item.unitCost,
                 productType: prod.productType,
-                unitOfMeasure: prod.unitOfMeasure
+                unitOfMeasure: prod.unitOfMeasure,
+                supplierId: item.supplierId || '',
+                invoiceNumber: item.invoiceNumber || ''
             };
         });
         setCart(cartItems);
@@ -56,20 +59,20 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
             packages: p.productType === 'materia_prima' ? 0 : 1,
             unitsPerPackage: p.productType === 'materia_prima' ? 0 : 1,
             quantity: 1,
-            totalPaid: p.averageCost || 0, // Inicia con el costo actual como sugerencia
+            totalPaid: p.averageCost || 0,
             unitCost: p.averageCost || 0,
             productType: p.productType,
-            unitOfMeasure: p.unitOfMeasure
+            unitOfMeasure: p.unitOfMeasure,
+            supplierId: supplierId || '', // Sugiere el global si existe (para migración suave)
+            invoiceNumber: notes || ''    // Sugiere el global si existe
         }]);
     };
 
     const updateCartItem = (id, field, value) => {
         setCart(cart.map(item => {
             if (item.productId === id) {
-                // Dejamos el valor como cadena exactamente como lo escribió el usuario (punto o coma)
                 const updated = { ...item, [field]: value };
 
-                // Función auxiliar para convertir a número solo para el cálculo, aceptando coma o punto
                 const toNum = (val) => {
                     if (!val || val === '.' || val === ',') return 0;
                     const parsed = parseFloat(String(val).replace(',', '.'));
@@ -77,15 +80,13 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
                 };
 
                 if (field === 'packages' || field === 'unitsPerPackage') {
-                    // Si cambia empaques o contenido, la cantidad total es el producto de ambos
                     updated.quantity = toNum(updated.packages) * toNum(updated.unitsPerPackage);
                 } else if (field === 'quantity') {
-                    // Si el usuario cambia directamente la cantidad total
                     updated.packages = 1;
                     updated.unitsPerPackage = value;
                 }
 
-                // Recalcular Costo Unitario basado en los valores numéricos actuales
+                // Recalcular Costo Unitario
                 const finalQty = toNum(updated.quantity);
                 const finalTotal = toNum(updated.totalPaid);
 
@@ -125,11 +126,14 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
             productId: item.productId,
             quantity: Number(item.quantity) || 0,
             unitCost: Number(item.unitCost) || 0,
-            totalCost: Number(item.totalPaid) || 0
+            totalCost: Number(item.totalPaid) || 0,
+            supplierId: item.supplierId || null,
+            invoiceNumber: item.invoiceNumber || ''
         }));
 
         const movements = items.map(item => {
             const p = products.find(prod => prod.id === item.productId);
+            const supObj = suppliers.find(s => s.id === item.supplierId);
             return {
                 id: crypto.randomUUID(),
                 productId: item.productId,
@@ -140,7 +144,7 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
                 unitCost: item.unitCost,
                 referenceId: purchaseId,
                 referenceType: 'purchase',
-                notes: `Compra: ${notes || 'Stock'}`,
+                notes: `Factura: ${item.invoiceNumber || 'S/N'} | Prov: ${supObj?.name || 'Gral'}`,
                 date
             };
         });
@@ -251,6 +255,30 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
                                                 </button>
                                             </div>
 
+                                            {/* Sección Intermedia: Proveedor y Factura (NUEVO) */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-1.5">
+                                                    <label className="label-xs !mb-0 text-slate-400">Proveedor del Item</label>
+                                                    <select 
+                                                        value={item.supplierId} 
+                                                        onChange={(e) => updateCartItem(item.productId, 'supplierId', e.target.value)}
+                                                        className="input-std !bg-white border-slate-200 !py-3 text-xs font-bold"
+                                                    >
+                                                        <option value="">🛒 Proveedor General</option>
+                                                        {suppliers?.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="label-xs !mb-0 text-slate-400">Factura / Referencia</label>
+                                                    <input 
+                                                        value={item.invoiceNumber} 
+                                                        onChange={(e) => updateCartItem(item.productId, 'invoiceNumber', e.target.value)}
+                                                        placeholder="N° Factura..."
+                                                        className="input-std !bg-white border-slate-200 !py-3 text-xs font-bold" 
+                                                    />
+                                                </div>
+                                            </div>
+
                                             {/* Inferior: Valores y Cálculos */}
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
                                                 {/* Precio Pagado */}
@@ -317,21 +345,16 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
 
                             {/* Footer Cart */}
                             <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col md:flex-row gap-5 items-end">
-                                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-                                    <div className="space-y-1.5">
-                                        <label className="label-xs">Fecha de Recepción</label>
+                                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                                    <div className="space-y-1.5 text-center md:text-left">
+                                        <label className="label-xs">Fecha de Recepción Global</label>
                                         <input type="date" value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className="input-std !bg-slate-50 border-none" />
                                     </div>
-                                    <div className="space-y-1.5">
-                                        <label className="label-xs">Proveedor Seleccionado</label>
-                                        <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="input-std !bg-slate-50 border-none">
-                                            <option value="">🛒 Proveedor General</option>
-                                            {suppliers?.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="label-xs">Referencia / Factura</label>
-                                        <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ej: Factura #9901" className="input-std !bg-slate-50 border-none" />
+                                    <div className="flex items-center justify-center md:justify-end gap-3 bg-blue-600 px-8 rounded-[2rem] text-white shadow-xl shadow-blue-500/20 py-4 cursor-default">
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[10px] font-black opacity-60 uppercase tracking-widest">Total General</span>
+                                            <span className="text-2xl font-black tracking-tight">${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
@@ -343,7 +366,7 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
                                     <button
                                         disabled={cart.length === 0}
                                         onClick={handleConfirmPurchase}
-                                        className="flex-1 md:flex-none px-10 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white rounded-2xl font-black shadow-xl shadow-blue-900/30 transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-widest hover:-translate-y-1 active:scale-95"
+                                        className="flex-1 md:flex-none px-10 py-6 bg-slate-900 border border-slate-800 hover:bg-black disabled:bg-slate-200 text-white rounded-[2rem] font-black transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-widest hover:-translate-y-1 active:scale-95"
                                     >
                                         <Save size={18} /> {editId ? 'Guardar Cambios' : 'Procesar Compra'}
                                     </button>
@@ -353,53 +376,113 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
                     </div>
                 </div>
             ) : (
-                /* History View remains similar but polished */
+                /* History View con Detalle Expandible */
                 <div className="bg-white rounded-[3rem] border border-slate-200 shadow-sm overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
                             <thead>
                                 <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100">
+                                    <th className="px-8 py-6 w-10"></th>
                                     <th className="px-8 py-6">Fecha / Registro</th>
-                                    <th className="px-8 py-6">Detalle / Proveedor</th>
-                                    <th className="px-8 py-6 text-center">Diversidad</th>
-                                    <th className="px-8 py-6 text-right">Monto Total</th>
+                                    <th className="px-8 py-6">Monto Total</th>
+                                    <th className="px-8 py-6 text-center">Items</th>
                                     <th className="px-8 py-6 text-right">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                                 {[...purchases].sort((a, b) => new Date(b.date) - new Date(a.date)).map(p => (
-                                    <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
-                                        <td className="px-8 py-5">
-                                            <div className="flex items-center gap-3">
-                                                <Calendar size={16} className="text-blue-400" />
-                                                <div className="font-black text-slate-600 text-sm">{new Date(p.date).toLocaleDateString()}</div>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-5">
-                                            <p className="font-black text-slate-800 text-base">{p.notes || 'Reabastecimiento'}</p>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                                <User size={10} className="text-slate-300" />
-                                                <p className="text-[10px] text-slate-400 font-bold uppercase">{suppliers.find(s => s.id === p.supplierId)?.name || 'General'}</p>
-                                            </div>
-                                        </td>
-                                        <td className="px-8 py-5 text-center">
-                                            <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-black text-[11px] border border-blue-100">
-                                                {purchaseItems.filter(i => i.purchaseId === p.id).length} ítems
-                                            </span>
-                                        </td>
-                                        <td className="px-8 py-5 text-right font-black text-blue-600 text-lg">${(Number(p.totalAmount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                        <td className="px-8 py-5 text-right">
-                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => startEdit(p)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Editar Compra">
-                                                    <Edit3 size={18} />
-                                                </button>
-                                                <button onClick={() => { if (confirm('¿Eliminar esta compra? Se revertirá el stock de los productos.')) onDeletePurchase(p.id); }}
-                                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all" title="Eliminar Compra">
-                                                    <Trash2 size={18} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                    <React.Fragment key={p.id}>
+                                        <tr 
+                                            onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
+                                            className={`hover:bg-blue-50/30 transition-all cursor-pointer group ${expandedId === p.id ? 'bg-blue-50/50' : ''}`}
+                                        >
+                                            <td className="px-8 py-5">
+                                                {expandedId === p.id ? <ChevronDown size={18} className="text-blue-500" /> : <ChevronRight size={18} className="text-slate-300" />}
+                                            </td>
+                                            <td className="px-8 py-5">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="bg-slate-100 p-2.5 rounded-xl text-slate-500">
+                                                        <Calendar size={18} />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-black text-slate-800 text-sm">{new Date(p.date).toLocaleDateString()}</div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{p.notes || 'Reabastecimiento'}</span>
+                                                            <span className="text-[9px] text-blue-500 font-black uppercase mt-0.5">
+                                                                Prov: {suppliers.find(s => s.id === p.supplierId)?.name || 'General'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-5">
+                                                <span className="text-lg font-black text-blue-600 tracking-tight">${(Number(p.totalAmount) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                            </td>
+                                            <td className="px-8 py-5 text-center">
+                                                <span className="bg-white text-slate-600 px-4 py-1 rounded-full font-black text-[10px] border border-slate-200 shadow-sm">
+                                                    {purchaseItems.filter(i => i.purchaseId === p.id).length} PRODUCTOS
+                                                </span>
+                                            </td>
+                                            <td className="px-8 py-5 text-right">
+                                                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={(e) => { e.stopPropagation(); startEdit(p); }} className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-white rounded-xl shadow-sm transition-all" title="Editar">
+                                                        <Edit3 size={18} />
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); if (confirm('¿Eliminar esta compra? Se revertirá el stock.')) onDeletePurchase(p.id); }}
+                                                        className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-white rounded-xl shadow-sm transition-all" title="Eliminar">
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {/* Detalle Expandible */}
+                                        {expandedId === p.id && (
+                                            <tr className="bg-slate-50/50 animate-in slide-in-from-top-2 duration-300">
+                                                <td colSpan="5" className="px-12 py-8 pt-2">
+                                                    <div className="bg-white rounded-[2rem] border border-slate-200/60 shadow-xl shadow-slate-200/50 p-6">
+                                                        <div className="grid grid-cols-1 gap-3">
+                                                            {purchaseItems.filter(i => i.purchaseId === p.id).map((item, idx) => {
+                                                                const prod = products.find(pr => pr.id === item.productId);
+                                                                const supItem = suppliers.find(s => s.id === item.supplierId);
+                                                                return (
+                                                                    <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50/50 rounded-2xl border border-slate-100">
+                                                                        <div className="flex items-center gap-4 flex-1">
+                                                                            <div className="bg-white p-2.5 rounded-xl border border-slate-100 text-blue-500 shadow-sm">
+                                                                                <Box size={18} />
+                                                                            </div>
+                                                                            <div className="max-w-xs">
+                                                                                <p className="font-black text-slate-700 text-sm">{prod?.name || 'Desconocido'}</p>
+                                                                                <p className="text-[10px] text-slate-400 font-bold">Qty: {item.quantity} {prod?.unitOfMeasure}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex-1 grid grid-cols-2 gap-8 px-6 border-x border-slate-200/50">
+                                                                            <div>
+                                                                                <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Proveedor Específico</p>
+                                                                                <p className={`text-[10px] font-bold ${supItem ? 'text-blue-600' : 'text-slate-500'}`}>
+                                                                                    {supItem?.name || 'Proveedor General'}
+                                                                                </p>
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">N° Factura</p>
+                                                                                <p className="text-[10px] font-black text-slate-700 tracking-wider uppercase">
+                                                                                    {item.invoiceNumber || 'Sin Factura'}
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex flex-col items-end min-w-[120px]">
+                                                                            <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Costo Unit</p>
+                                                                            <p className="text-sm font-black text-slate-800">${Number(item.unitCost || 0).toLocaleString()}</p>
+                                                                            <p className="text-[9px] font-bold text-slate-400">${Number(item.totalCost || 0).toLocaleString()} Total</p>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 ))}
                             </tbody>
                         </table>
