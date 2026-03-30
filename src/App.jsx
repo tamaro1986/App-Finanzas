@@ -428,8 +428,16 @@ function App() {
                 )}
 
                 {/* Main Content Area */}
-                <main className="flex-1 overflow-y-auto pt-16 lg:pt-0 bg-[#f9fafb]">
-                    <div className="max-w-7xl mx-auto p-4 md:p-8">
+                <main 
+                    className="flex-1 h-full overflow-y-auto overflow-x-hidden bg-[#f9fafb] relative"
+                    style={{ 
+                        // El padding top debe considerar el header fijo (4rem) + el safe area del notch
+                        paddingTop: 'calc(env(safe-area-inset-top) + 4rem)',
+                        // También considerar el safe area inferior para gestos de navegación
+                        paddingBottom: 'env(safe-area-inset-bottom, 1rem)'
+                    }}
+                >
+                    <div className="w-full max-w-7xl mx-auto px-4 py-6 md:p-8">
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
                             <Suspense fallback={<div className="flex items-center justify-center h-64"><Loader className="animate-spin text-emerald-600" size={48} /></div>}>
                                 {renderView()}

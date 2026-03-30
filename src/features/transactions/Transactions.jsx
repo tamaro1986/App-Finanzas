@@ -2006,48 +2006,30 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
     }, [filteredTransactions]);
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-500">
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight" style={{ fontFamily: 'Georgia, serif' }}>Movimientos</h2>
-                    <p className="text-slate-500 font-medium">Registra y revisa todos tus ingresos y gastos.</p>
+        <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500">
+            <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
+                <div className="flex-1 min-w-0">
+                    <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight truncate" style={{ fontFamily: 'Georgia, serif' }}>Movimientos</h2>
+                    <p className="text-xs md:text-sm text-slate-500 font-medium truncate">Registra y revisa todos tus ingresos y gastos.</p>
                 </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setIsBackupModalOpen(true)}
-                        className="btn-secondary text-sm"
-                        title="Gestionar respaldos automáticos"
-                    >
+                <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                    <button onClick={() => setIsBackupModalOpen(true)} className="btn-secondary !p-2 md:!px-4 md:!py-2 text-xs" title="Gestionar respaldos automáticos">
                         <Shield size={18} />
-                        <span>Respaldos</span>
+                        <span className="hidden sm:inline">Respaldos</span>
                     </button>
-                    <button
-                        onClick={() => setIsHistoryModalOpen(true)}
-                        className="btn-secondary text-sm"
-                        title="Ver historial de importaciones"
-                    >
+                    <button onClick={() => setIsHistoryModalOpen(true)} className="btn-secondary !p-2 md:!px-4 md:!py-2 text-xs" title="Ver historial de importaciones">
                         <History size={18} />
-                        <span>Historial</span>
+                        <span className="hidden sm:inline">Historial</span>
                     </button>
-                    <button
-                        onClick={() => setIsImportModalOpen(true)}
-                        className="btn-secondary text-sm"
-                    >
+                    <button onClick={() => setIsImportModalOpen(true)} className="btn-secondary !p-2 md:!px-4 md:!py-2 text-xs">
                         <Upload size={18} />
-                        <span>Importar</span>
+                        <span className="hidden sm:inline">Importar</span>
                     </button>
-                    <button
-                        onClick={handleExportData}
-                        className="btn-primary text-sm bg-gradient-to-r from-blue-600 to-indigo-600 shadow-blue-100 hover:from-blue-700 hover:to-indigo-700"
-                        title="Descargar movimientos filtrados a Excel"
-                    >
+                    <button onClick={handleExportData} className="btn-primary !p-2 md:!px-4 md:!py-2 text-xs bg-gradient-to-r from-blue-600 to-indigo-600 shadow-blue-100" title="Descargar movimientos filtrados a Excel">
                         <Download size={18} />
-                        <span>Exportar Reporte</span>
+                        <span className="hidden sm:inline">Exportar Reporte</span>
                     </button>
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="btn-primary"
-                    >
+                    <button onClick={() => setIsModalOpen(true)} className="btn-primary !px-4 !py-2 text-xs">
                         <Plus size={18} />
                         <span>Nuevo Movimiento</span>
                     </button>
@@ -2055,62 +2037,37 @@ const Transactions = ({ transactions, setTransactions, accounts, setAccounts, bu
             </header>
 
             {/* Resumen de Saldos del Periodo Filtro */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div 
-                    className="card bg-white shadow-sm transition-all duration-300"
-                    style={{ 
-                        border: selectedAccount ? `1px solid ${selectedAccount.color}30` : '1px solid #f1f5f9',
-                        borderTop: selectedAccount ? `4px solid ${selectedAccount.color}` : '1px solid #f1f5f9'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="card bg-white p-5 border-l-4 border-l-emerald-500 shadow-sm">
+                    <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                            <ArrowUpCircle size={20} />
+                            <ArrowUpCircle size={18} />
                         </div>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ingresos del Periodo</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ingresos Periodo</span>
                     </div>
-                    <p className="text-2xl font-bold text-emerald-600">
+                    <p className="text-xl md:text-2xl font-black text-emerald-600 italic">
                         ${totals.income.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </p>
                 </div>
-                <div 
-                    className="card bg-white shadow-sm transition-all duration-300"
-                    style={{ 
-                        border: selectedAccount ? `1px solid ${selectedAccount.color}30` : '1px solid #f1f5f9',
-                        borderTop: selectedAccount ? `4px solid ${selectedAccount.color}` : '1px solid #f1f5f9'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-3">
+                <div className="card bg-white p-5 border-l-4 border-l-rose-500 shadow-sm">
+                    <div className="flex items-center gap-3 mb-2">
                         <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
-                            <ArrowDownCircle size={20} />
+                            <ArrowDownCircle size={18} />
                         </div>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Gastos del Periodo</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gastos Periodo</span>
                     </div>
-                    <p className="text-2xl font-bold text-rose-600">
+                    <p className="text-xl md:text-2xl font-black text-rose-600 italic">
                         ${totals.expense.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </p>
                 </div>
-                <div 
-                    className="card bg-white shadow-sm transition-all duration-300"
-                    style={{ 
-                        border: selectedAccount ? `1px solid ${selectedAccount.color}30` : '1px solid #f1f5f9',
-                        borderTop: selectedAccount ? `4px solid ${selectedAccount.color}` : '1px solid #f1f5f9'
-                    }}
-                >
-                    <div className="flex items-center gap-3 mb-3">
-                        <div 
-                            className="p-2 rounded-lg"
-                            style={{ 
-                                backgroundColor: selectedAccount ? `${selectedAccount.color}15` : '#eff6ff',
-                                color: selectedAccount ? selectedAccount.color : '#2563eb'
-                            }}
-                        >
-                            <CreditCard size={20} />
+                <div className="card bg-white p-5 border-l-4 shadow-sm" style={{ borderLeftColor: selectedAccount?.color || '#3b82f6' }}>
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg" style={{ backgroundColor: selectedAccount ? `${selectedAccount.color}15` : '', color: selectedAccount?.color }}>
+                            <CreditCard size={18} />
                         </div>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Balance del Periodo</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Balance Periodo</span>
                     </div>
-                    <p className={`text-2xl font-bold ${(totals.income - totals.expense) >= 0 ? (selectedAccount ? '' : 'text-blue-600') : 'text-rose-600'}`}
-                       style={(totals.income - totals.expense) >= 0 && selectedAccount ? { color: selectedAccount.color } : {}}>
+                    <p className="text-xl md:text-2xl font-black italic" style={{ color: (totals.income - totals.expense) >= 0 ? (selectedAccount?.color || '#3b82f6') : '#e11d48' }}>
                         ${(totals.income - totals.expense).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                     </p>
                 </div>

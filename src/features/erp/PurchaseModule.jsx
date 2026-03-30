@@ -108,6 +108,12 @@ export default function PurchaseModule({ products, suppliers, purchases, purchas
     const handleConfirmPurchase = () => {
         if (!cart.length) return alert('El carrito está vacío');
 
+        // Validar que cada item tenga proveedor y factura (NUEVO REQUERIMIENTO)
+        const incompleteItem = cart.find(item => !item.supplierId || !item.invoiceNumber);
+        if (incompleteItem) {
+            return alert(`El producto "${incompleteItem.name}" requiere proveedor y número de factura específico para continuar.`);
+        }
+
         const purchaseId = editId || crypto.randomUUID();
         const date = new Date(purchaseDate).toISOString();
 
